@@ -6,6 +6,8 @@
 src/**
 .gitignore
 .git/**
+.eslintrc.json
+.eslintignore
 .github/**
 tsconfig.json
 package-lock.json
