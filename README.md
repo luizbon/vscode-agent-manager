@@ -1,86 +1,73 @@
 # VS Code Agent Manager
 
-The **VS Code Agent Manager** is a powerful extension that simplifies the discovery, installation, and management of GitHub Copilot Agents within Visual Studio Code.
+<div align="center">
+  <img src="resources/agent-manager-logo.png" alt="VS Code Agent Manager Logo" width="200" />
+</div>
 
-## Features
+<div align="center">
 
--   **Agent Discovery**: Automatically fetch and list available agents from configured GitHub repositories (e.g., awesome-copilot lists).
--   **One-Click Installation**: Install agents directly into your workspace or user profile with a single click.
--   **Agent Details**: View comprehensive agent information including descriptions, versions, authors, and last update dates.
--   **Git Integration**: Automatically fetches the latest commit date information from the agent's source repository.
--   **Update Management**: Easily check for updates and keep your agents current.
--   **Version Control**: Compare local installed versions against remote versions to see what has changed.
+[![Version](https://vsmarketplacebadge.apphb.com/version/luizbon.vscode-agent-manager.svg)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
+[![Installs](https://vsmarketplacebadge.apphb.com/installs/luizbon.vscode-agent-manager.svg)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
+[![Ratings](https://vsmarketplacebadge.apphb.com/rating/luizbon.vscode-agent-manager.svg)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
 
-## Usage
+</div>
 
-1.  **Open the Agent Manager View**:
-    -   Click on the **Agent Manager** icon in the Activity Bar (the robot head icon).
-    -   Or run the command `Agent Manager: Refresh Agents`.
+**VS Code Agent Manager** is the essential toolkit for supercharging your GitHub Copilot experience. Effortlessly discover, install, and manage custom Copilot Agents directly within VS Code.
 
-2.  **Browse Agents**:
-    -   The view lists all discovered agents from the configured repositories.
-    -   Click on an agent to view its details.
+> **Note:** This extension is designed to work with GitHub Copilot Chat.
 
-3.  **Install an Agent**:
-    -   In the Details panel, click **Install Agent**.
-    -   Choose the installation location:
-        -   **Workspace**: Installs to `.github/agents` in your current workspace.
-        -   **User Profile**: Installs to your global VS Code user prompts directory (available across all workspaces).
+---
 
-4.  **Update an Agent**:
-    -   If an update is available, the Details panel will show an **Update Agent** button.
-    -   Click it to fetch the latest version.
+## 🚀 Features
 
-## Configuration
+### 🔍 Auto-Discovery
+Stop manually hunting for agent configurations. Point the Agent Manager to any GitHub repository (like the popular `awesome-copilot` lists), and it will automatically index all available agents.
 
-You can configure the repositories used for agent discovery in your VS Code settings:
+### 📦 One-Click Installation
+Install agents in seconds. Choose to install them globally (User Profile) for access in all projects, or locally (Workspace) for project-specific needs.
 
--   `agentManager.repositories`: A list of GitHub repository URLs to scan for agents.
-    -   Default: `https://github.com/github/awesome-copilot`
+### 🔄 Smart Updates & Version Control
+Stay up to date. The extension tracks installed versions against the remote source, alerting you when updates are available. View changelogs and author details at a glance.
 
-## Requirements
+### 🛡️ Git-Powered Reliability
+Built on top of Git, ensuring that you always get the exact version of the agent you expect, with verified author and commit data.
 
--   VS Code v1.96.0 or higher.
--   GitHub Copilot Chat extension (recommended for using the installed agents).
+---
 
-## Extension Settings
+## 📖 Usage
 
-This extension contributes the following settings:
+### 1. Discover Agents
+Open the **Agent Manager** view by clicking the robot icon in the Activity Bar. The list will automatically populate with agents from the default repository.
 
-*   `agentManager.repositories`: List of GitHub repositories to search for agents.
+### 2. View Details
+Click on any agent to see its description, author, tags, and version history in a dedicated details panel.
 
-## Known Issues
+### 3. Install
+Click the **Install** button in the details panel or the download icon in the list.
+- **Workspace Install**: Saves to `.github/agents` in your current folder.
+- **User Install**: Saves to your global VS Code prompts directory.
 
--   Ensure you have internet access to fetch agent lists from GitHub.
--   GitHub API rate limits may apply if excessive requests are made without authentication (though the extension uses public endpoints).
+### 4. Manage
+The view separates Installed agents from Discovered ones. Right-click an installed agent to **Update** or **Uninstall** it.
 
-## Release Notes
+---
 
-### 0.0.1
+## ⚙️ Configuration
 
--   Initial release of VS Code Agent Manager.
--   Support for discovering, installing, and updating agents.
--   Git-based metadata fetching for accurate author and date information.
+Customize your agent sources via VS Code Settings:
 
-## Development
+| Setting | Description | Default |
+| :--- | :--- | :--- |
+| `agentManager.repositories` | List of GitHub repo URLs to scan for agents. | `["https://github.com/github/awesome-copilot"]` |
 
-1.  Clone the repository.
-2.  Run `npm install` to install dependencies.
-3.  Press `F5` to open a new VS Code window with the extension loaded.
-4.  Run tests with `npm test`.
+---
 
-## Contributing
+## 🤝 Contributing
 
-Contributions are welcome! If you'd like to help improve the VS Code Agent Manager, please follow these steps:
-
-1.  **Fork the repository** on GitHub.
-2.  **Clone your fork** locally: `git clone https://github.com/your-username/vscode-agent-manager.git`
-3.  **Create a feature branch**: `git checkout -b feature/my-new-feature`
-4.  **Make your changes** and ensure they follow the project's coding standards.
-5.  **Run tests**: Ensure all tests pass with `npm test`.
-6.  **Commit your changes**: `git commit -m "Add some feature"`
-7.  **Push to the branch**: `git push origin feature/my-new-feature`
-8.  **Open a Pull Request** against the main repository.
+We love contributions!
+1. Fork the repo.
+2. Create a feature branch.
+3. Submit a Pull Request.
 
 ---
 

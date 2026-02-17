@@ -28,6 +28,10 @@ jobs:
         id: gitversion
         uses: gittools/actions/gitversion/execute@v4.2.0
 
+      - name: Update package.json version
+        run: |
+          npm version ${{ steps.gitversion.outputs.semVer }} --no-git-tag-version --allow-same-version
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -102,6 +106,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-output
+          path: .
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -110,10 +115,6 @@ jobs:
 
       - name: Install Production Dependencies
         run: npm ci --omit=dev
-
-      - name: Update package.json version
-        run: |
-          npm version ${{ needs.build.outputs.semver }} --no-git-tag-version --allow-same-version
 
       - name: Publish to VS Code Marketplace
         run: |
