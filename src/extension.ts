@@ -72,8 +72,8 @@ export function activate(context: vscode.ExtensionContext) {
         // item is AgentTreeItem if called from tree view
         // If called from webview, item might be { agent: ... }
         let agent = item?.agent || item?.arguments?.[0]; // Handle different call signatures if needed
-        if (!agent && item && item.agent) agent = item.agent; // AgentTreeItem
-        if (!agent && item && item.name) agent = item; // Direct agent object
+        if (!agent && item && item.agent) { agent = item.agent; } // AgentTreeItem
+        if (!agent && item && item.name) { agent = item; } // Direct agent object
 
         if (agent) {
             const installer = new AgentInstaller(context);

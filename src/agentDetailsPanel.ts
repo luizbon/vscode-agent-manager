@@ -66,7 +66,7 @@ export class AgentDetailsPanel {
                         return;
                     case 'showDiff':
                         const localPath = message.localPath;
-                        if (!localPath) return;
+                        if (!localPath) { return; }
 
                         try {
                             const agent = this._agent;
