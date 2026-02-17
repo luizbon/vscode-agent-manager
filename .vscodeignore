@@ -6,11 +6,14 @@
 src/**
 .gitignore
 .git/**
-.eslintrc.json
-.eslintignore
+
+eslint.config.js
+GitVersion.yml
 .github/**
 tsconfig.json
 package-lock.json
+vscode.config.mjs
+out/test/**
 **/*.map
 test/**
 # Keep out/ and resources/ and package.json

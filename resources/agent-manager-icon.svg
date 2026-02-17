@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <!-- The Activity Bar uses the SVG as a mask. Use a single color (e.g. #000) and transparency. -->
+  
+  <!-- Robot Head Outline -->
+  <rect x="6" y="10" width="20" height="16" rx="3" stroke="#000" stroke-width="2.5"/>
+  
+  <!-- Side antennas/wings -->
+  <path d="M6 14C4 14 2 16 2 18V20C2 22 4 24 6 24" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+  <path d="M26 14C28 14 30 16 30 18V20C30 22 28 24 26 24" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Eyes -->
+  <circle cx="12" cy="18" r="1.5" fill="#000"/>
+  <circle cx="20" cy="18" r="1.5" fill="#000"/>
+  
+  <!-- Sensing Antenna -->
+  <path d="M16 10V4" stroke="#000" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="16" cy="4" r="2" fill="#000"/>
+  
+  <!-- Success/Management Checkmark -->
+  <path d="M22 28L25 31L31 25" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

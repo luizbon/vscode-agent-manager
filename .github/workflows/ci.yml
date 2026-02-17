@@ -17,6 +17,16 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Install GitVersion
+      uses: gittools/actions/gitversion/setup@v2.0.0
+      with:
+        versionSpec: '6.0.x'
+    - name: Determine Version
+      uses: gittools/actions/gitversion/execute@v2.0.0
+    - name: Display Version
+      run: echo "Calculated version is ${{ env.GitVersion_SemVer }}"
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:

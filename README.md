@@ -69,20 +69,18 @@ This extension contributes the following settings:
 3.  Press `F5` to open a new VS Code window with the extension loaded.
 4.  Run tests with `npm test`.
 
-## Publishing
+## Contributing
 
-This repository includes a GitHub Action workflow to automatically publish new versions to the Visual Studio Marketplace.
+Contributions are welcome! If you'd like to help improve the VS Code Agent Manager, please follow these steps:
 
-1.  **Generate a Personal Access Token (PAT)**:
-    -   Log in to [Azure DevOps](https://dev.azure.com/) with the Microsoft account associated with your VS Code Marketplace publisher.
-    -   Create a new PAT with `Marketplace (manage)` scope.
-2.  **Add Secret to Repository**:
-    -   Go to your GitHub repository settings -> Secrets and variables -> Actions.
-    -   Add a new repository secret named `VSCE_PAT` with your token value.
-3.  **Create a New Release**:
-    -   Update the version in `package.json` (e.g., `npm version patch`).
-    -   Push the changes and the new tag (e.g., `git push && git push --tags`).
-    -   The `Release` workflow will automatically run and publish the extension.
+1.  **Fork the repository** on GitHub.
+2.  **Clone your fork** locally: `git clone https://github.com/your-username/vscode-agent-manager.git`
+3.  **Create a feature branch**: `git checkout -b feature/my-new-feature`
+4.  **Make your changes** and ensure they follow the project's coding standards.
+5.  **Run tests**: Ensure all tests pass with `npm test`.
+6.  **Commit your changes**: `git commit -m "Add some feature"`
+7.  **Push to the branch**: `git push origin feature/my-new-feature`
+8.  **Open a Pull Request** against the main repository.
 
 ---
 
