@@ -7,6 +7,7 @@
             "ES2020"
         ],
         "sourceMap": true,
+        "inlineSourceMap": false,
         "rootDir": "src",
         "strict": true,
         "skipLibCheck": true
