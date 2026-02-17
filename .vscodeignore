@@ -1,0 +1,15 @@
+
+# This file specifies patterns to exclude from the extension package
+
+.vscode/**
+.vscode-test/**
+src/**
+.gitignore
+.git/**
+.github/**
+tsconfig.json
+package-lock.json
+**/*.map
+test/**
+# Keep out/ and resources/ and package.json
+# Keep node_modules (vsce handles automatic exclusion of devDependencies)

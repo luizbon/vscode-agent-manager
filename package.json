@@ -1,0 +1,118 @@
+{
+    "name": "vscode-agent-manager",
+    "displayName": "VS Code Agent Manager",
+    "description": "Search and install GitHub Copilot agents from remote repositories.",
+    "version": "0.0.1",
+    "publisher": "luizbon",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/luizbon/vscode-agent-manager.git"
+    },
+    "engines": {
+        "vscode": "^1.96.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "agentManager",
+                    "title": "Agent Manager",
+                    "icon": "resources/agent-manager-icon.png"
+                }
+            ]
+        },
+        "views": {
+            "agentManager": [
+                {
+                    "id": "agentManagerAgents",
+                    "name": "Discovered Agents",
+                    "icon": "$(list-unordered)"
+                }
+            ]
+        },
+        "menus": {
+            "view/item/context": [
+                {
+                    "command": "agentManager.install",
+                    "when": "view == agentManagerAgents",
+                    "group": "inline"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "agentManager.search",
+                    "when": "view == agentManagerAgents",
+                    "group": "navigation"
+                },
+                {
+                    "command": "agentManager.openSettings",
+                    "when": "view == agentManagerAgents",
+                    "group": "navigation"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "agentManager.search",
+                "title": "Refresh Agents",
+                "category": "Agent Manager",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "agentManager.install",
+                "title": "Install Agent",
+                "category": "Agent Manager",
+                "icon": "$(cloud-download)"
+            },
+            {
+                "command": "agentManager.openSettings",
+                "title": "Agent Settings",
+                "category": "Agent Manager",
+                "icon": "$(gear)"
+            }
+        ],
+        "configuration": {
+            "title": "Agent Manager",
+            "properties": {
+                "agentManager.repositories": {
+                    "type": "array",
+                    "default": [
+                        "https://github.com/github/awesome-copilot"
+                    ],
+                    "description": "List of GitHub repositories to search for agents.",
+                    "items": {
+                        "type": "string",
+                        "description": "GitHub Repository URL",
+                        "pattern": "^https://github\\.com/[^/]+/[^/]+$"
+                    },
+                    "uniqueItems": true
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "clean": "rm -rf out",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src --ext ts",
+        "test": "vscode-test"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.96.0",
+        "@types/mocha": "^10.0.6",
+        "@types/node": "20.x",
+        "@typescript-eslint/eslint-plugin": "^6.19.1",
+        "@typescript-eslint/parser": "^6.19.1",
+        "eslint": "^8.56.0",
+        "mocha": "^10.2.0",
+        "typescript": "^5.3.3",
+        "@vscode/test-cli": "^0.0.4",
+        "@vscode/test-electron": "^2.3.9"
+    }
+}
