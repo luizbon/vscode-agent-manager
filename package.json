@@ -104,15 +104,17 @@
         "test": "vscode-test --config vscode.config.mjs"
     },
     "devDependencies": {
-        "@types/vscode": "^1.96.0",
         "@types/mocha": "^10.0.6",
         "@types/node": "24.10.13",
+        "@types/sinon": "^21.0.0",
+        "@types/vscode": "^1.96.0",
         "@typescript-eslint/eslint-plugin": "^8.56.0",
         "@typescript-eslint/parser": "^8.56.0",
+        "@vscode/test-cli": "^0.0.12",
+        "@vscode/test-electron": "^2.3.9",
         "eslint": "^10.0.0",
         "mocha": "^11.7.5",
-        "typescript": "^5.3.3",
-        "@vscode/test-cli": "^0.0.12",
-        "@vscode/test-electron": "^2.3.9"
+        "sinon": "^21.0.1",
+        "typescript": "^5.3.3"
     }
 }

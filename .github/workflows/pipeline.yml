@@ -117,7 +117,7 @@ jobs:
 
       - name: Publish to VS Code Marketplace
         run: |
-          npm pkg set scripts.vscode:prepublish=""
+          npm pkg delete scripts.vscode:prepublish
           npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
 
       - name: Push Git Tag

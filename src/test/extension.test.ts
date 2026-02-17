@@ -1,3 +1,4 @@
+
 import * as assert from 'assert';
 
 // You can import and use all API from the 'vscode' module
@@ -8,8 +9,14 @@ import * as vscode from 'vscode';
 suite('Extension Test Suite', () => {
     vscode.window.showInformationMessage('Start all tests.');
 
-    test('Sample test', () => {
-        assert.strictEqual(-1, [1, 2, 3].indexOf(5));
-        assert.strictEqual(-1, [1, 2, 3].indexOf(0));
+    test('Commands should be registered', async () => {
+        const ext = vscode.extensions.getExtension('luizbon.vscode-agent-manager');
+        assert.ok(ext, 'Extension not found');
+        await ext.activate();
+
+        const commands = await vscode.commands.getCommands(true);
+        assert.ok(commands.includes('agentManager.search'), 'agentManager.search not found');
+        assert.ok(commands.includes('agentManager.install'), 'agentManager.install not found');
+        assert.ok(commands.includes('agentManager.openSettings'), 'agentManager.openSettings not found');
     });
 });
