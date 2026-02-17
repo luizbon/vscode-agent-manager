@@ -107,12 +107,15 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install Production Dependencies
+        run: npm ci --omit=dev
+
       - name: Update package.json version
         run: |
           npm version ${{ needs.build.outputs.semver }} --no-git-tag-version --allow-same-version
 
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --no-prepublish -p ${{ secrets.VSCE_PAT }}
 
       - name: Push Git Tag
         run: |
