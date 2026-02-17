@@ -31,7 +31,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install dependencies
         run: npm ci
@@ -69,11 +69,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-output
+          path: .
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install dependencies
         run: npm ci
@@ -105,7 +106,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install Production Dependencies
         run: npm ci --omit=dev
@@ -115,7 +116,9 @@ jobs:
           npm version ${{ needs.build.outputs.semver }} --no-git-tag-version --allow-same-version
 
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish --no-prepublish -p ${{ secrets.VSCE_PAT }}
+        run: |
+          npm pkg set scripts.vscode:prepublish=""
+          npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
 
       - name: Push Git Tag
         run: |
