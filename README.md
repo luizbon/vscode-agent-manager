@@ -6,9 +6,9 @@
 
 <div align="center">
 
-[![Version](https://vsmarketplacebadge.apphb.com/version/luizbon.vscode-agent-manager.svg)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
-[![Installs](https://vsmarketplacebadge.apphb.com/installs/luizbon.vscode-agent-manager.svg)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
-[![Ratings](https://vsmarketplacebadge.apphb.com/rating/luizbon.vscode-agent-manager.svg)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
+[![Version](https://img.shields.io/visual-studio-marketplace/v/luizbon.vscode-agent-manager.png)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/luizbon.vscode-agent-manager.png)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
+[![Ratings](https://img.shields.io/visual-studio-marketplace/r/luizbon.vscode-agent-manager.png)](https://marketplace.visualstudio.com/items?itemName=luizbon.vscode-agent-manager)
 
 </div>
 
