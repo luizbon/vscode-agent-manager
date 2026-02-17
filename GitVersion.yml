@@ -1,16 +1,11 @@
-mode: Mainline
+workflow: TrunkBased/preview1
 next-version: 0.1.0
 branches:
   main:
     regex: ^main$
-    mode: Mainline
-    tag: ''
     increment: Patch
-    prevent-increment-of-merged-server-side-edge-cases: false
-    track-merge-target: false
-    tracks-release-branches: false
+    is-main-branch: true
     is-release-branch: true
-    is-mainline: true
 ignore:
   sha: []
 merge-message-formats: {}
