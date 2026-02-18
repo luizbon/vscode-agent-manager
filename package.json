@@ -37,8 +37,14 @@
         "views": {
             "agentManager": [
                 {
+                    "type": "webview",
+                    "id": "agentManagerMarketplace",
+                    "name": "Agent Marketplace",
+                    "icon": "$(hubot)"
+                },
+                {
                     "id": "agentManagerAgents",
-                    "name": "Discovered Agents",
+                    "name": "Agent Management",
                     "icon": "$(list-unordered)"
                 }
             ]
@@ -47,7 +53,22 @@
             "view/item/context": [
                 {
                     "command": "agentManager.install",
-                    "when": "view == agentManagerAgents",
+                    "when": "view == agentManagerAgents && viewItem == agent:available",
+                    "group": "inline"
+                },
+                {
+                    "command": "agentManager.update",
+                    "when": "view == agentManagerAgents && viewItem == agent:installed:outdated",
+                    "group": "inline"
+                },
+                {
+                    "command": "agentManager.uninstall",
+                    "when": "view == agentManagerAgents && (viewItem == agent:installed || viewItem == agent:installed:outdated)",
+                    "group": "inline"
+                },
+                {
+                    "command": "agentManager.refreshSource",
+                    "when": "view == agentManagerAgents && viewItem == repository",
                     "group": "inline"
                 }
             ],
@@ -55,16 +76,6 @@
                 {
                     "command": "agentManager.search",
                     "when": "view == agentManagerAgents",
-                    "group": "navigation"
-                },
-                {
-                    "command": "agentManager.filter",
-                    "when": "view == agentManagerAgents",
-                    "group": "navigation"
-                },
-                {
-                    "command": "agentManager.clearFilter",
-                    "when": "view == agentManagerAgents && agentManager.filterActive",
                     "group": "navigation"
                 },
                 {
@@ -88,22 +99,28 @@
                 "icon": "$(cloud-download)"
             },
             {
-                "command": "agentManager.filter",
-                "title": "Filter Agents",
-                "category": "Agent Manager",
-                "icon": "$(filter)"
-            },
-            {
-                "command": "agentManager.clearFilter",
-                "title": "Clear Filter",
-                "category": "Agent Manager",
-                "icon": "$(clear-all)"
-            },
-            {
                 "command": "agentManager.openSettings",
                 "title": "Agent Settings",
                 "category": "Agent Manager",
                 "icon": "$(gear)"
+            },
+            {
+                "command": "agentManager.refreshSource",
+                "title": "Refresh Source",
+                "category": "Agent Manager",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "agentManager.update",
+                "title": "Update Agent",
+                "category": "Agent Manager",
+                "icon": "$(sync)"
+            },
+            {
+                "command": "agentManager.uninstall",
+                "title": "Uninstall Agent",
+                "category": "Agent Manager",
+                "icon": "$(trash)"
             }
         ],
         "configuration": {
@@ -121,6 +138,11 @@
                         "pattern": "^https://github\\.com/[^/]+/[^/]+$"
                     },
                     "uniqueItems": true
+                },
+                "agentManager.cacheDurationDays": {
+                    "type": "number",
+                    "default": 7,
+                    "description": "Number of days to keep the agent cache before automatically refreshing."
                 }
             }
         }

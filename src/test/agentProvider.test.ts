@@ -56,7 +56,8 @@ suite('AgentProvider Test Suite', () => {
         assert.ok(fireStub.called);
         // Verify cache structure
         const cacheArg = globalState.update.firstCall.args[1];
-        assert.deepStrictEqual(cacheArg['repo'], agents);
+        assert.deepStrictEqual(cacheArg['repo'].agents, agents);
+        assert.strictEqual(typeof cacheArg['repo'].timestamp, 'number');
     });
 
     test('clear removes all agents', () => {

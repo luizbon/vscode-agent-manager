@@ -18,5 +18,6 @@ suite('Extension Test Suite', () => {
         assert.ok(commands.includes('agentManager.search'), 'agentManager.search not found');
         assert.ok(commands.includes('agentManager.install'), 'agentManager.install not found');
         assert.ok(commands.includes('agentManager.openSettings'), 'agentManager.openSettings not found');
+        assert.ok(commands.includes('agentManager.uninstall'), 'agentManager.uninstall not found');
     });
 });

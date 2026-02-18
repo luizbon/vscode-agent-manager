@@ -8,8 +8,23 @@ import * as https from 'https';
 export class AgentInstaller {
     constructor(private context: vscode.ExtensionContext) { }
 
-    public async installAgent(agent: Agent) {
+    public async installAgent(agent: Agent, targetPath?: string) {
         const installOptions: vscode.QuickPickItem[] = [];
+
+        if (targetPath) {
+            // Direct update/overwrite
+            try {
+                await this.downloadFile(agent.installUrl, targetPath);
+                vscode.window.showInformationMessage(`Agent ${agent.name} updated successfully at ${targetPath}`);
+
+                const doc = await vscode.workspace.openTextDocument(targetPath);
+                await vscode.window.showTextDocument(doc);
+                return;
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to update agent: ${error}`);
+                return;
+            }
+        }
 
         // 1. Determine workspace installation options from chat.agentFilesLocations
         if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {

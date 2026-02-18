@@ -103,6 +103,13 @@ export class AgentDetailsPanel {
                         // Webview reported it is ready (reloaded or first load)
                         this.fetchLastUpdated(this._agent);
                         this.checkInstallationStatus(this._agent);
+                        // Fetch content
+                        try {
+                            const content = await this.fetchUrl(this._agent.installUrl);
+                            this._panel.webview.postMessage({ command: 'updateContent', content });
+                        } catch (e) {
+                            this._panel.webview.postMessage({ command: 'updateContent', content: 'Failed to load content: ' + e });
+                        }
                         return;
                     case 'showDiff':
                         const localPath = message.localPath;
@@ -244,12 +251,6 @@ export class AgentDetailsPanel {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'style.css')); // We can create this later if needed
 
-        // Fetch the raw content to display? Or just the description?
-        // The user said "open the contents of the agent".
-        // Doing a fetch inside getHtmlForWebview might be slow.
-        // For now, let's display metadata and a placeholder or async load.
-        // Ideally we would fetch the markdown and render it.
-
         return `<!DOCTYPE html>
             <html lang="en">
             <head>
@@ -304,16 +305,6 @@ export class AgentDetailsPanel {
                     let currentLocalPath = '';
                     const searchTerm = "${searchTerm || ''}";
                     
-                    function escapeRegExp(string) {
-                        return string.replace(/[.*+?^!:"{}()|[\\]\\\\]/g, '\\\\$&'); // $& means the whole matched string
-                    }
-
-                    function highlightText(text, term) {
-                         if (!term) return text;
-                         const regex = new RegExp('(' + escapeRegExp(term) + ')', 'gi');
-                         return text.replace(regex, '<mark>$1</mark>');
-                    }
-                    
                     function install() {
                         vscode.postMessage({ command: 'install' });
                     }
@@ -350,7 +341,7 @@ export class AgentDetailsPanel {
                                     statusEl.innerHTML = '<strong>Status:</strong> New version available';
                                     installedMsg.style.display = 'none';
                                     installBtn.style.display = 'none';
-                                    updateBtn.style.display = 'inline-block'; // Show update button
+                                    updateBtn.style.display = 'inline-block';
                                     diffBtn.style.display = 'inline-block';
                                     currentLocalPath = message.localPath;
                                 } else {
@@ -361,36 +352,37 @@ export class AgentDetailsPanel {
                                     diffBtn.style.display = 'none';
                                 }
                                 break;
-                        }
-                    });
+                            case 'updateContent':
+                                    const contentDiv = document.getElementById('content');
+                                    if (contentDiv) {
+                                        // Simple HTML escaping
+                                        let text = message.content;
+                                        let safeText = text.replace(/&/g, "&amp;")
+                                            .replace(/</g, "&lt;")
+                                            .replace(/>/g, "&gt;")
+                                            .replace(/"/g, "&quot;")
+                                            .replace(/'/g, "&#039;");
 
-                    // Async fetch content
-                    fetch('${agent.installUrl}')
-                        .then(response => response.text())
-                        .then(text => {
-                            const contentDiv = document.getElementById('content');
-                            // Escape HTML before highlighting to prevent injection, then highlight
-                            // For simplicity, we assume text is plain text or markdown.
-                            // If we want to render markdown we should use a library.
-                            // Here we just display text. 
-                            
-                            // Simple HTML escaping
-                            let safeText = text.replace(/&/g, "&amp;")
-                                .replace(/</g, "&lt;")
-                                .replace(/>/g, "&gt;")
-                                .replace(/"/g, "&quot;")
-                                .replace(/'/g, "&#039;");
-
-                            if (searchTerm) {
-                                contentDiv.innerHTML = highlightText(safeText, searchTerm);
-                            } else {
-                                contentDiv.textContent = text;
+                                        if (searchTerm) {
+                                            contentDiv.innerHTML = highlightText(safeText, searchTerm);
+                                        } else {
+                                            contentDiv.textContent = text;
+                                        }
+                                    }
+                                    break;
                             }
-                        })
-                        .catch(err => {
-                             document.getElementById('content').textContent = 'Failed to load content: ' + err;
                         });
-                        
+    
+                        function escapeRegExp(string) {
+                            return string.replace(/[.*+?^!:"{}()|[\\]\\\\]/g, '\\\\$&'); // $& means the whole matched string
+                        }
+    
+                        function highlightText(text, term) {
+                             if (!term) return text;
+                             const regex = new RegExp('(' + escapeRegExp(term) + ')', 'gi');
+                             return text.replace(regex, '<mark>$1</mark>');
+                        }
+
                     // Notify extension that the view has loaded
                     vscode.postMessage({ command: 'viewDidLoad' });
                 </script>
