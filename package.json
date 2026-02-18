@@ -82,6 +82,11 @@
                     "command": "agentManager.openSettings",
                     "when": "view == agentManagerAgents",
                     "group": "navigation"
+                },
+                {
+                    "command": "agentManager.feedback",
+                    "when": "view == agentManagerAgents",
+                    "group": "navigation"
                 }
             ]
         },
@@ -121,6 +126,12 @@
                 "title": "Uninstall Agent",
                 "category": "Agent Manager",
                 "icon": "$(trash)"
+            },
+            {
+                "command": "agentManager.feedback",
+                "title": "Send Feedback",
+                "category": "Agent Manager",
+                "icon": "$(comment-discussion)"
             }
         ],
         "configuration": {

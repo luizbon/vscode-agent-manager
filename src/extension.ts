@@ -1,5 +1,7 @@
 import 'source-map-support/register';
 import * as vscode from 'vscode';
+import * as os from 'os';
+import * as querystring from 'querystring';
 import { AgentDiscovery, Agent } from './agentDiscovery';
 import { AgentProvider } from './agentProvider';
 import { AgentInstaller } from './agentInstaller';
@@ -260,6 +262,54 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    let feedbackDisposable = vscode.commands.registerCommand('agentManager.feedback', async () => {
+        const feedbackTypes = ['Report a Bug', 'Feature Request'];
+        const selectedKey = await vscode.window.showQuickPick(feedbackTypes, {
+            placeHolder: 'What kind of feedback do you have?'
+        });
+
+        if (!selectedKey) { return; }
+
+        const isBug = selectedKey === 'Report a Bug';
+
+        // Gather system info
+        const extensionVersion = vscode.extensions.getExtension('luizbon.vscode-agent-manager')?.packageJSON.version || 'unknown';
+        const systemInfo = [
+            `**Environment:**`,
+            `- OS: ${os.platform()} ${os.release()} (${os.arch()})`,
+            `- VS Code: ${vscode.version}`,
+            `- Extension Version: ${extensionVersion}`,
+            `- Remote: ${vscode.env.remoteName || 'local'}`,
+        ].join('\n');
+
+        let title = '';
+        let body = '';
+
+        if (isBug) {
+            title = 'Bug Report: <short description>';
+            body = `**Description**\n\n**Steps to Reproduce**\n1.\n2.\n\n**Expected Behavior**\n\n**Actual Behavior**\n\n${systemInfo}`;
+        } else {
+            title = 'Feature Request: <short description>';
+            body = `**Feature Description**\n\n**Use Case**\n\n${systemInfo}`;
+        }
+
+        const query = querystring.stringify({
+            title: title,
+            body: body
+        });
+
+        const url = `https://github.com/luizbon/vscode-agent-manager/issues/new?${query}`;
+        vscode.env.openExternal(vscode.Uri.parse(url));
+    });
+
+    // Create status bar item (Priority 100 to be on the left side of other extension items if any)
+    const feedbackStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    feedbackStatusBarItem.text = "$(comment-discussion) Feedback";
+    feedbackStatusBarItem.tooltip = "Send Feedback for Agent Manager";
+    feedbackStatusBarItem.command = 'agentManager.feedback';
+    feedbackStatusBarItem.show();
+    context.subscriptions.push(feedbackStatusBarItem);
+
     context.subscriptions.push(searchDisposable);
     context.subscriptions.push(installDisposable);
     context.subscriptions.push(updateDisposable);
@@ -267,6 +317,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(refreshSourceDisposable);
     context.subscriptions.push(openSettingsDisposable);
     context.subscriptions.push(openDetailsDisposable);
+    context.subscriptions.push(feedbackDisposable);
 
     // Watch for configuration changes to auto-refresh
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
