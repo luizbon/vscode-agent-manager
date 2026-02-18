@@ -1,3 +1,4 @@
+import 'source-map-support/register';
 import * as vscode from 'vscode';
 import { AgentDiscovery, Agent } from './agentDiscovery';
 import { AgentProvider } from './agentProvider';

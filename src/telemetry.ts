@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as os from 'os';
 import { TelemetryReporter } from '@vscode/extension-telemetry';
 
 // TODO: Replace with your actual Application Insights Instrumentation Key
@@ -25,18 +26,33 @@ export class TelemetryService {
 
     public sendEvent(eventName: string, properties?: { [key: string]: string }, measurements?: { [key: string]: number }): void {
         if (this.isEnabled) {
-            this.reporter.sendTelemetryEvent(eventName, properties, measurements);
+            const commonProperties = this.getCommonProperties();
+            this.reporter.sendTelemetryEvent(eventName, { ...commonProperties, ...properties }, measurements);
         }
     }
 
     public sendError(error: Error, properties?: { [key: string]: string }, measurements?: { [key: string]: number }): void {
         if (this.isEnabled) {
+            const commonProperties = this.getCommonProperties();
             this.reporter.sendTelemetryErrorEvent('error', {
+                ...commonProperties,
                 ...properties,
                 message: error.message,
                 stack: error.stack || ''
             }, measurements);
         }
+    }
+
+    private getCommonProperties(): { [key: string]: string } {
+        return {
+            'common.os': os.platform(),
+            'common.platformversion': os.release(),
+            'common.arch': os.arch(),
+            'common.vscodeversion': vscode.version,
+            'common.extensionversion': vscode.extensions.getExtension('luizbon.vscode-agent-manager')?.packageJSON.version || 'unknown',
+            'common.remotename': vscode.env.remoteName || 'local',
+            'common.sessionid': vscode.env.sessionId
+        };
     }
 
     public dispose(): void {

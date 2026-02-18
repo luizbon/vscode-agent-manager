@@ -14,7 +14,7 @@ tsconfig.json
 package-lock.json
 vscode.config.mjs
 out/test/**
-**/*.map
+# **/*.map
 test/**
 # Keep out/ and resources/ and package.json
 # Keep node_modules (vsce handles automatic exclusion of devDependencies)
