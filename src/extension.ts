@@ -4,9 +4,34 @@ import { AgentProvider } from './agentProvider';
 import { AgentInstaller } from './agentInstaller';
 import { AgentDetailsPanel } from './agentDetailsPanel';
 import { AgentMarketplaceProvider } from './agentMarketplace';
+import { TelemetryService } from './telemetry';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Congratulations, your extension "vscode-agent-manager" is now active!');
+
+    const telemetry = TelemetryService.getInstance();
+    context.subscriptions.push(telemetry);
+
+    // Check if we have asked about telemetry
+    const hasAskedTelemetry = context.globalState.get<boolean>('agentManager.hasAskedTelemetry');
+    if (!hasAskedTelemetry) {
+        const enableTelemetry = 'Enable Telemetry';
+        const disableTelemetry = 'Disable Telemetry';
+        vscode.window.showInformationMessage(
+            'Help improve Agent Manager by sending anonymous usage data?',
+            enableTelemetry,
+            disableTelemetry
+        ).then(selection => {
+            if (selection === enableTelemetry) {
+                vscode.workspace.getConfiguration('agentManager').update('enableTelemetry', true, vscode.ConfigurationTarget.Global);
+            } else if (selection === disableTelemetry) {
+                vscode.workspace.getConfiguration('agentManager').update('enableTelemetry', false, vscode.ConfigurationTarget.Global);
+            }
+            context.globalState.update('agentManager.hasAskedTelemetry', true);
+        });
+    }
+
+    telemetry.sendEvent('activate');
 
     const agentDiscovery = new AgentDiscovery();
     const agentProvider = new AgentProvider(context);
@@ -24,6 +49,7 @@ export function activate(context: vscode.ExtensionContext) {
         // Don't clear immediately to allow cache to be shown
         // agentProvider.clear(); 
         treeView.message = 'Refreshing agents...';
+        telemetry.sendEvent('search.start', { force: force.toString() });
 
         const config = vscode.workspace.getConfiguration('agentManager');
         const repositories = config.get<string[]>('repositories') || [];
@@ -79,6 +105,7 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                 } catch (error) {
                     console.error(`Error searching ${repo}:`, error);
+                    telemetry.sendError(error as Error, { context: 'search', repo });
                     // Use cached if available?
                 }
             }
@@ -101,6 +128,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             // vscode.window.showInformationMessage(`Found ${totalAgents} agents.`);
+            telemetry.sendEvent('search.complete', { agentCount: totalAgents.toString() });
         });
     });
 
@@ -118,8 +146,10 @@ export function activate(context: vscode.ExtensionContext) {
                         agentProvider.addAgents(repo, agents);
                         const allCached = agentProvider.getAllCachedAgents();
                         marketplaceProvider.updateAgents(allCached, agentProvider.getInstalledAgents());
+                        telemetry.sendEvent('refreshSource.success', { repo });
                     }
                 } catch (error) {
+                    telemetry.sendError(error as Error, { context: 'refreshSource', repo });
                     vscode.window.showErrorMessage(`Failed to refresh ${item.label}: ${error}`);
                 }
             });
@@ -139,11 +169,18 @@ export function activate(context: vscode.ExtensionContext) {
 
 
         if (agent) {
-            const installer = new AgentInstaller(context);
-            await installer.installAgent(agent);
-            // Refresh installed list after install
-            await agentProvider.refreshInstalledAgents();
-            marketplaceProvider.updateAgents(agentProvider.getAllCachedAgents(), agentProvider.getInstalledAgents());
+            try {
+                telemetry.sendEvent('install.start', { agent: agent.name });
+                const installer = new AgentInstaller(context);
+                await installer.installAgent(agent);
+                // Refresh installed list after install
+                await agentProvider.refreshInstalledAgents();
+                marketplaceProvider.updateAgents(agentProvider.getAllCachedAgents(), agentProvider.getInstalledAgents());
+                telemetry.sendEvent('install.success', { agent: agent.name });
+            } catch (error) {
+                telemetry.sendError(error as Error, { context: 'install', agent: agent.name });
+                vscode.window.showErrorMessage(`Failed to install agent: ${error}`);
+            }
         } else {
             vscode.window.showInformationMessage('Please select an agent from the list to install.');
         }
@@ -152,19 +189,26 @@ export function activate(context: vscode.ExtensionContext) {
     let updateDisposable = vscode.commands.registerCommand('agentManager.update', async (item: any) => {
         // item is AgentTreeItem
         if (item && item.updateAgent) {
-            const installer = new AgentInstaller(context);
-            // Quick update: overwrite the existing file
-            // We know the installed path from item.agent.path
-            await installer.installAgent(item.updateAgent, item.agent.path);
+            try {
+                telemetry.sendEvent('update.start', { agent: item.agent.name });
+                const installer = new AgentInstaller(context);
+                // Quick update: overwrite the existing file
+                // We know the installed path from item.agent.path
+                await installer.installAgent(item.updateAgent, item.agent.path);
 
-            // Refresh
-            await agentProvider.refreshInstalledAgents();
+                // Refresh
+                await agentProvider.refreshInstalledAgents();
+                telemetry.sendEvent('update.success', { agent: item.agent.name });
+            } catch (error) {
+                telemetry.sendError(error as Error, { context: 'update', agent: item.agent.name });
+                vscode.window.showErrorMessage(`Failed to update agent: ${error}`);
+            }
         }
     });
 
     let uninstallDisposable = vscode.commands.registerCommand('agentManager.uninstall', async (item: any) => {
         let agent = item?.agent || item; // Handle TreeItem or direct agent object
-        if (!agent) return;
+        if (!agent) { return; }
 
         // Find the installed agent to get the path
         const installed = agentProvider.getInstalledAgents().find(a => a.name === agent.name);
@@ -177,11 +221,14 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (confirm === 'Uninstall') {
                 try {
+                    telemetry.sendEvent('uninstall.start', { agent: agent.name });
                     await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
                     vscode.window.showInformationMessage(`Uninstalled ${agent.name}`);
                     await agentProvider.refreshInstalledAgents();
                     marketplaceProvider.updateAgents(agentProvider.getAllCachedAgents(), agentProvider.getInstalledAgents());
+                    telemetry.sendEvent('uninstall.success', { agent: agent.name });
                 } catch (error) {
+                    telemetry.sendError(error as Error, { context: 'uninstall', agent: agent.name });
                     vscode.window.showErrorMessage(`Failed to uninstall: ${error}`);
                 }
             }
@@ -203,9 +250,11 @@ export function activate(context: vscode.ExtensionContext) {
         try {
             // Check if agent is TreeItem or raw object
             let agentData = agent.agent || agent;
+            telemetry.sendEvent('openDetails', { agent: agentData.name, hasSearchTerm: (!!searchTerm).toString() });
             AgentDetailsPanel.createOrShow(context, agentData, searchTerm);
         } catch (error) {
             console.error('Error creating AgentDetailsPanel:', error);
+            telemetry.sendError(error as Error, { context: 'openDetails' });
             vscode.window.showErrorMessage(`Error opening panel: ${error}`);
         }
     });

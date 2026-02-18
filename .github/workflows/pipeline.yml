@@ -40,6 +40,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Inject Telemetry Key
+        env:
+          TELEMETRY_KEY: ${{ vars.TELEMETRY_KEY }}
+        run: |
+          if [ -n "$TELEMETRY_KEY" ]; then
+            sed -i "s/00000000-0000-0000-0000-000000000000/$TELEMETRY_KEY/g" src/telemetry.ts
+          else
+            echo "No telemetry key provided, skipping injection."
+          fi
+
       - name: Compile
         run: npm run compile
 

@@ -143,6 +143,11 @@
                     "type": "number",
                     "default": 7,
                     "description": "Number of days to keep the agent cache before automatically refreshing."
+                },
+                "agentManager.enableTelemetry": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable telemetry collection for Agent Manager."
                 }
             }
         }
@@ -174,5 +179,8 @@
         "source-map-support": "^0.5.21",
         "ts-node": "^10.9.2",
         "typescript": "^5.3.3"
+    },
+    "dependencies": {
+        "@vscode/extension-telemetry": "^1.5.0"
     }
 }

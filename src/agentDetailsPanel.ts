@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { TelemetryService } from './telemetry';
 import { Agent } from './agentDiscovery';
 import { AgentInstaller } from './agentInstaller';
 import { GithubApi } from './githubApi';
@@ -45,6 +46,7 @@ export class AgentDetailsPanel {
             }
         } catch (e) {
             console.error('Error fetching commit date:', e);
+            TelemetryService.getInstance().sendError(e as Error, { context: 'fetchLastUpdated', agent: agent.name });
         }
     }
     public static currentPanel: AgentDetailsPanel | undefined;
@@ -108,6 +110,7 @@ export class AgentDetailsPanel {
                             const content = await this.fetchUrl(this._agent.installUrl);
                             this._panel.webview.postMessage({ command: 'updateContent', content });
                         } catch (e) {
+                            TelemetryService.getInstance().sendError(e as Error, { context: 'fetchContent', agent: this._agent.name });
                             this._panel.webview.postMessage({ command: 'updateContent', content: 'Failed to load content: ' + e });
                         }
                         return;
@@ -117,6 +120,7 @@ export class AgentDetailsPanel {
 
                         try {
                             const agent = this._agent;
+                            TelemetryService.getInstance().sendEvent('diff.show', { agent: agent.name });
                             const remoteContent = await this.fetchUrl(agent.installUrl);
 
                             // Create a temporary file or virtual document for remote content
@@ -148,6 +152,7 @@ export class AgentDetailsPanel {
                                 `${agent.name} (Local) ↔ (Remote)`
                             );
                         } catch (error) {
+                            TelemetryService.getInstance().sendError(error as Error, { context: 'showDiff', agent: this._agent.name });
                             vscode.window.showErrorMessage(`Failed to open diff: ${error}`);
                         }
                         return;
@@ -227,6 +232,7 @@ export class AgentDetailsPanel {
             }
         } catch (e) {
             console.error('Failed to compare installation status', e);
+            TelemetryService.getInstance().sendError(e as Error, { context: 'checkInstallationStatus', agent: agent.name });
         }
     }
 
