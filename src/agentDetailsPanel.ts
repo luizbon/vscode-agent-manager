@@ -1,19 +1,59 @@
 import * as vscode from 'vscode';
 import { Agent } from './agentDiscovery';
 import { AgentInstaller } from './agentInstaller';
-import * as https from 'https';
+import { GithubApi } from './githubApi';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
 export class AgentDetailsPanel {
+    // ...
+    private fetchUrl(url: string): Promise<string> {
+        return GithubApi.fetch(url);
+    }
+
+    private async fetchLastUpdated(agent: Agent) {
+        const repoRegex = /github\.com\/([^\/]+)\/([^\/]+)/;
+        const match = agent.repository.match(repoRegex);
+        if (!match) { return; }
+
+        const owner = match[1];
+        const repo = match[2];
+
+        let path = '';
+        const rawRegex = /raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/[^\/]+\/(.+)/;
+        const pathMatch = agent.installUrl.match(rawRegex);
+        if (pathMatch) {
+            path = pathMatch[1];
+        }
+
+        if (!path) { return; }
+
+        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/commits?path=${path}&page=1&per_page=1`;
+
+        try {
+            const data = await GithubApi.fetch(apiUrl);
+            const commits = JSON.parse(data);
+            if (Array.isArray(commits) && commits.length > 0) {
+                const date = commits[0].commit.author.date;
+                const formattedDate = new Date(date).toLocaleDateString(undefined, {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+                this._panel.webview.postMessage({ command: 'updateDate', date: formattedDate });
+            }
+        } catch (e) {
+            console.error('Error fetching commit date:', e);
+        }
+    }
     public static currentPanel: AgentDetailsPanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
     private _agent: Agent;
 
-    public static createOrShow(context: vscode.ExtensionContext, agent: Agent) {
+    public static createOrShow(context: vscode.ExtensionContext, agent: Agent, searchTerm?: string) {
         console.log('AgentDetailsPanel.createOrShow called for:', agent.name);
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
@@ -22,7 +62,7 @@ export class AgentDetailsPanel {
         // If we already have a panel, show it.
         if (AgentDetailsPanel.currentPanel) {
             AgentDetailsPanel.currentPanel._panel.reveal(column);
-            AgentDetailsPanel.currentPanel.update(agent);
+            AgentDetailsPanel.currentPanel.update(agent, searchTerm);
             return;
         }
 
@@ -37,16 +77,16 @@ export class AgentDetailsPanel {
             }
         );
 
-        AgentDetailsPanel.currentPanel = new AgentDetailsPanel(panel, context, agent);
+        AgentDetailsPanel.currentPanel = new AgentDetailsPanel(panel, context, agent, searchTerm);
     }
 
-    private constructor(panel: vscode.WebviewPanel, private context: vscode.ExtensionContext, agent: Agent) {
+    private constructor(panel: vscode.WebviewPanel, private context: vscode.ExtensionContext, agent: Agent, searchTerm?: string) {
         this._panel = panel;
         this._extensionUri = context.extensionUri;
         this._agent = agent;
 
         // Set the webview's initial html content
-        this.update(agent);
+        this.update(agent, searchTerm);
 
         // Listen for when the panel is disposed
         // This happens when the user closes the panel or when the panel is closed programmatically
@@ -111,10 +151,10 @@ export class AgentDetailsPanel {
         );
     }
 
-    public update(agent: Agent) {
+    public update(agent: Agent, searchTerm?: string) {
         this._agent = agent;
         this._panel.title = agent.name;
-        this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, agent);
+        this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, agent, searchTerm);
         this.fetchLastUpdated(agent);
         this.checkInstallationStatus(agent);
     }
@@ -183,66 +223,7 @@ export class AgentDetailsPanel {
         }
     }
 
-    private fetchUrl(url: string): Promise<string> {
-        return new Promise((resolve, reject) => {
-            https.get(url, (res) => {
-                let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', () => resolve(data));
-            }).on('error', reject);
-        });
-    }
 
-    private async fetchLastUpdated(agent: Agent) {
-        const repoRegex = /github\.com\/([^\/]+)\/([^\/]+)/;
-        const match = agent.repository.match(repoRegex);
-        if (!match) { return; }
-
-        const owner = match[1];
-        const repo = match[2];
-        // We need the file path relative to the repo root.
-        // agent.installUrl is raw.githubusercontent.com/owner/repo/branch/path/to/file
-
-        let path = '';
-        const rawRegex = /raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/[^\/]+\/(.+)/;
-        const pathMatch = agent.installUrl.match(rawRegex);
-        if (pathMatch) {
-            path = pathMatch[1];
-        }
-
-        if (!path) { return; }
-
-        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/commits?path=${path}&page=1&per_page=1`;
-
-        const options = {
-            headers: {
-                'User-Agent': 'VSCode-Agent-Manager'
-            }
-        };
-
-        https.get(apiUrl, options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => {
-                try {
-                    const commits = JSON.parse(data);
-                    if (Array.isArray(commits) && commits.length > 0) {
-                        const date = commits[0].commit.author.date;
-                        const formattedDate = new Date(date).toLocaleDateString(undefined, {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                        });
-                        this._panel.webview.postMessage({ command: 'updateDate', date: formattedDate });
-                    }
-                } catch (e) {
-                    console.error('Error parsing commit date:', e);
-                }
-            });
-        }).on('error', (e) => {
-            console.error('Error fetching commit date:', e);
-        });
-    }
 
     public dispose() {
         AgentDetailsPanel.currentPanel = undefined;
@@ -258,7 +239,7 @@ export class AgentDetailsPanel {
         }
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview, agent: Agent) {
+    private _getHtmlForWebview(webview: vscode.Webview, agent: Agent, searchTerm?: string) {
         // Use a Content Security Policy
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'style.css')); // We can create this later if needed
@@ -321,6 +302,17 @@ export class AgentDetailsPanel {
                 <script>
                     const vscode = acquireVsCodeApi();
                     let currentLocalPath = '';
+                    const searchTerm = "${searchTerm || ''}";
+                    
+                    function escapeRegExp(string) {
+                        return string.replace(/[.*+?^!:"{}()|[\\]\\\\]/g, '\\\\$&'); // $& means the whole matched string
+                    }
+
+                    function highlightText(text, term) {
+                         if (!term) return text;
+                         const regex = new RegExp('(' + escapeRegExp(term) + ')', 'gi');
+                         return text.replace(regex, '<mark>$1</mark>');
+                    }
                     
                     function install() {
                         vscode.postMessage({ command: 'install' });
@@ -376,7 +368,24 @@ export class AgentDetailsPanel {
                     fetch('${agent.installUrl}')
                         .then(response => response.text())
                         .then(text => {
-                            document.getElementById('content').textContent = text;
+                            const contentDiv = document.getElementById('content');
+                            // Escape HTML before highlighting to prevent injection, then highlight
+                            // For simplicity, we assume text is plain text or markdown.
+                            // If we want to render markdown we should use a library.
+                            // Here we just display text. 
+                            
+                            // Simple HTML escaping
+                            let safeText = text.replace(/&/g, "&amp;")
+                                .replace(/</g, "&lt;")
+                                .replace(/>/g, "&gt;")
+                                .replace(/"/g, "&quot;")
+                                .replace(/'/g, "&#039;");
+
+                            if (searchTerm) {
+                                contentDiv.innerHTML = highlightText(safeText, searchTerm);
+                            } else {
+                                contentDiv.textContent = text;
+                            }
                         })
                         .catch(err => {
                              document.getElementById('content').textContent = 'Failed to load content: ' + err;

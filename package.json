@@ -18,7 +18,7 @@
         "url": "https://github.com/luizbon/vscode-agent-manager.git"
     },
     "engines": {
-        "vscode": "^1.96.0"
+        "vscode": "^1.106.0"
     },
     "categories": [
         "Other"
@@ -58,6 +58,16 @@
                     "group": "navigation"
                 },
                 {
+                    "command": "agentManager.filter",
+                    "when": "view == agentManagerAgents",
+                    "group": "navigation"
+                },
+                {
+                    "command": "agentManager.clearFilter",
+                    "when": "view == agentManagerAgents && agentManager.filterActive",
+                    "group": "navigation"
+                },
+                {
                     "command": "agentManager.openSettings",
                     "when": "view == agentManagerAgents",
                     "group": "navigation"
@@ -76,6 +86,18 @@
                 "title": "Install Agent",
                 "category": "Agent Manager",
                 "icon": "$(cloud-download)"
+            },
+            {
+                "command": "agentManager.filter",
+                "title": "Filter Agents",
+                "category": "Agent Manager",
+                "icon": "$(filter)"
+            },
+            {
+                "command": "agentManager.clearFilter",
+                "title": "Clear Filter",
+                "category": "Agent Manager",
+                "icon": "$(clear-all)"
             },
             {
                 "command": "agentManager.openSettings",

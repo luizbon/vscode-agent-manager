@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import * as https from 'https';
+import { GithubApi } from './githubApi';
 
 export interface Agent {
     name: string;
@@ -34,19 +33,6 @@ export class AgentDiscovery {
     }
 
     public async fetchAgentsFromRepo(repoUrl: string): Promise<Agent[]> {
-        // Assume GitHub repo for now.
-        // Transform URL to API URL or raw content URL
-        // Example: https://github.com/github-copilot-resources/awesome-copilot-agents
-        // API: https://api.github.com/repos/github-copilot-resources/awesome-copilot-agents/contents/
-
-        // Naive implementation: fetch repo contents, recurse or look for .agent.md
-        // For "awesome" lists, we might need a specific structure or just crawl.
-        // Let's assume a structure where agents are in folders or we scan the repo.
-
-        // Better approach for the hackathon/MVP: 
-        // 1. Use GitHub API to list files recursively (tree).
-        // 2. Filter for .agent.md
-
         const ownerRepo = this.parseGitHubUrl(repoUrl);
         if (!ownerRepo) {
             throw new Error('Invalid GitHub URL');
@@ -83,15 +69,11 @@ export class AgentDiscovery {
     }
 
     private async fetchGitHubTree(owner: string, repo: string): Promise<any[]> {
-        // https://api.github.com/repos/OWNER/REPO/git/trees/main?recursive=1 
-        // Need to identify default branch first preferably, or assume main/master.
-        // Let's try main, then master.
-
         const branches = ['main', 'master'];
         for (const branch of branches) {
             try {
                 const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-                const response = await this.httpsGetBlocking(url);
+                const response = await GithubApi.fetch(url);
                 const data = JSON.parse(response);
                 if (data.tree) {
                     return data.tree;
@@ -105,26 +87,7 @@ export class AgentDiscovery {
 
     private async fetchGitHubFileContent(owner: string, repo: string, filePath: string): Promise<string> {
         const url = `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/${filePath}`;
-        return await this.httpsGetBlocking(url);
-    }
-
-    private httpsGetBlocking(url: string): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const options = {
-                headers: {
-                    'User-Agent': 'VSCode-Agent-Manager'
-                }
-            };
-            https.get(url, options, (res) => {
-                if (res.statusCode !== 200) {
-                    reject(new Error(`Request failed with status code ${res.statusCode}`));
-                    return;
-                }
-                let data = '';
-                res.on('data', (chunk) => data += chunk);
-                res.on('end', () => resolve(data));
-            }).on('error', (err) => reject(err));
-        });
+        return await GithubApi.fetch(url);
     }
 
     private parseAgentFile(content: string, repo: string, filePath: string): Agent | null {
@@ -157,9 +120,6 @@ export class AgentDiscovery {
                 metadata[key] = value;
             }
         }
-
-        // Fallback or additional parsing from body if needed
-        // For now rely on frontmatter or basic inference
 
         if (!metadata.name) {
             // infer from filename

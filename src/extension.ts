@@ -58,10 +58,10 @@ export function activate(context: vscode.ExtensionContext) {
                 if (repositories.length > 0 && agentProvider.isEmpty) {
                     treeView.message = 'No agents found.';
                 } else {
-                    treeView.message = undefined;
+                    treeView.message = agentProvider.filterStatus || undefined;
                 }
             } else {
-                treeView.message = undefined;
+                treeView.message = agentProvider.filterStatus || undefined;
             }
 
             // vscode.window.showInformationMessage(`Found ${totalAgents} agents.`);
@@ -94,13 +94,53 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
         try {
-            AgentDetailsPanel.createOrShow(context, agent);
+            AgentDetailsPanel.createOrShow(context, agent, agentProvider.currentFilterTerm);
         } catch (error) {
             console.error('Error creating AgentDetailsPanel:', error);
             vscode.window.showErrorMessage(`Error opening panel: ${error}`);
         }
     });
 
+    let filterDisposable = vscode.commands.registerCommand('agentManager.filter', async () => {
+        const quickPickItems: any[] = [
+            { label: 'Name', description: 'Search only by agent name', type: 'name' },
+            { label: 'Content', description: 'Search by name, description, and tags', type: 'content' }
+        ];
+
+        if (agentProvider.currentFilterTerm) {
+            quickPickItems.push({ label: 'Clear Filter', description: 'Remove current filter', type: 'clear' });
+        }
+
+        const typeChoice: any = await vscode.window.showQuickPick(quickPickItems, { placeHolder: 'Select filter scope' });
+
+        if (!typeChoice) { return; }
+
+        if (typeChoice.type === 'clear') {
+            vscode.commands.executeCommand('agentManager.clearFilter');
+            return;
+        }
+
+        const searchTerm = await vscode.window.showInputBox({
+            title: `Filtering by ${typeChoice.label}`,
+            placeHolder: 'Enter search term (leave empty to clear filter)',
+            prompt: `Enter text to search in agent ${typeChoice.label.toLowerCase()}`,
+            value: agentProvider.currentFilterTerm // Pre-fill with existing term if any
+        });
+
+        // Search term is undefined if cancelled (ESC)
+        if (searchTerm === undefined) { return; }
+
+        agentProvider.setFilter(searchTerm, typeChoice.type);
+        treeView.message = agentProvider.filterStatus || undefined;
+    });
+
+    let clearFilterDisposable = vscode.commands.registerCommand('agentManager.clearFilter', () => {
+        agentProvider.setFilter('', 'name');
+        treeView.message = undefined;
+    });
+
+    context.subscriptions.push(filterDisposable);
+    context.subscriptions.push(clearFilterDisposable);
     context.subscriptions.push(searchDisposable);
     context.subscriptions.push(installDisposable);
     context.subscriptions.push(openSettingsDisposable);
