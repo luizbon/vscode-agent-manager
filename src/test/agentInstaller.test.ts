@@ -96,11 +96,16 @@ suite('AgentInstaller Test Suite', () => {
                 return dest;
             };
 
-            if (cb) cb(res);
+            if (cb) { cb(res); }
 
             contentStream.write('mock content');
             contentStream.end();
-            return new EventEmitter() as any;
+
+            const req = new EventEmitter() as any;
+            req.setTimeout = () => req;
+            req.abort = () => { };
+            req.destroy = () => { };
+            return req;
         });
 
         // Stub workspace open/show

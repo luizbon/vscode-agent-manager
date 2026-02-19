@@ -34,7 +34,7 @@ suite('AgentDiscovery Test Suite', () => {
         const httpsStub = sandbox.stub(https, 'get').callsFake((url, options, callback) => {
             const res = new EventEmitter() as any;
             res.statusCode = 404; // Simulate Not Found
-            if (callback) callback(res);
+            if (callback) { callback(res); }
             const req = new EventEmitter() as any;
             req.setTimeout = () => req;
             req.destroy = () => { };
@@ -94,7 +94,7 @@ This is a test agent.
             }
             stream.end();
 
-            if (callback) callback(res);
+            if (callback) { callback(res); }
             const req = new EventEmitter() as any;
             req.setTimeout = () => req;
             req.destroy = () => { };

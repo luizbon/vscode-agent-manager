@@ -63,7 +63,7 @@ export class AgentProvider implements vscode.TreeDataProvider<RegistryItem> {
 
     public isCacheValid(repo: string): boolean {
         const data = this.repoAgents.get(repo);
-        if (!data) return false;
+        if (!data) { return false; }
 
         const config = vscode.workspace.getConfiguration('agentManager');
         const days = config.get<number>('cacheDurationDays') || 7;
@@ -152,13 +152,13 @@ export class AgentProvider implements vscode.TreeDataProvider<RegistryItem> {
         if (match) {
             const yaml = match[1];
             const nameMatch = yaml.match(/^name:\s*(.*)$/m);
-            if (nameMatch) name = nameMatch[1].trim().replace(/^['"]+|['"]+$/g, '');
+            if (nameMatch) { name = nameMatch[1].trim().replace(/^['"]+|['"]+$/g, ''); }
 
             const descMatch = yaml.match(/^description:\s*(.*)$/m);
-            if (descMatch) description = descMatch[1].trim();
+            if (descMatch) { description = descMatch[1].trim(); }
 
             const verMatch = yaml.match(/^version:\s*(.*)$/m);
-            if (verMatch) version = verMatch[1].trim();
+            if (verMatch) { version = verMatch[1].trim(); }
         }
 
         return {
@@ -236,9 +236,9 @@ export class CategoryItem extends vscode.TreeItem {
     ) {
         super(label, collapsibleState);
         this.contextValue = 'category';
-        if (id === 'profiles') this.iconPath = new vscode.ThemeIcon('home');
-        if (id === 'installed') this.iconPath = new vscode.ThemeIcon('package');
-        if (id === 'sources') this.iconPath = new vscode.ThemeIcon('rss');
+        if (id === 'profiles') { this.iconPath = new vscode.ThemeIcon('home'); }
+        if (id === 'installed') { this.iconPath = new vscode.ThemeIcon('package'); }
+        if (id === 'sources') { this.iconPath = new vscode.ThemeIcon('rss'); }
     }
 }
 

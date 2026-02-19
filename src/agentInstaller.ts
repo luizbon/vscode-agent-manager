@@ -105,7 +105,7 @@ export class AgentInstaller {
 
         return new Promise((resolve, reject) => {
             const file = fs.createWriteStream(destPath);
-            https.get(url, (response) => {
+            const req = https.get(url, (response) => {
                 if (response.statusCode !== 200) {
                     reject(new Error(`Failed to download ${url}: Status Code ${response.statusCode}`));
                     return;
@@ -115,9 +115,17 @@ export class AgentInstaller {
                     file.close();
                     resolve();
                 });
-            }).on('error', (err) => {
-                fs.unlink(destPath, () => { }); // Delete the file async. (But we don't check result)
+            });
+
+            req.on('error', (err) => {
+                fs.unlink(destPath, () => { }); // Delete the file async
                 reject(err);
+            });
+
+            req.setTimeout(15000, () => {
+                req.destroy();
+                fs.unlink(destPath, () => { }); // Delete partial file
+                reject(new Error('Download timed out'));
             });
         });
     }
