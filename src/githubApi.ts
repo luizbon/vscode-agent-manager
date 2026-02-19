@@ -58,7 +58,7 @@ export class GithubApi {
                     'User-Agent': 'VSCode-Agent-Manager'
                 }
             };
-            https.get(url, options, (res) => {
+            const req = https.get(url, options, (res) => {
                 if (res.statusCode !== 200) {
                     const error: any = new Error(`Request failed with status code ${res.statusCode}`);
                     error.statusCode = res.statusCode;
@@ -73,7 +73,15 @@ export class GithubApi {
                 let data = '';
                 res.on('data', (chunk) => data += chunk);
                 res.on('end', () => resolve(data));
-            }).on('error', (err) => reject(err));
+            });
+
+            req.on('error', (err) => reject(err));
+
+            // Set 60s timeout
+            req.setTimeout(60000, () => {
+                req.destroy();
+                reject(new Error('Request timed out'));
+            });
         });
     }
 }

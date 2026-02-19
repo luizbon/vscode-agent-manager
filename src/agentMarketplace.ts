@@ -277,18 +277,25 @@ export class AgentMarketplaceProvider implements vscode.WebviewViewProvider {
                     });
 
                     function renderAgents(agents) {
-                        container.innerHTML = '';
-                        if (agents.length === 0) {
-                            container.innerHTML = '<div style="grid-column: 1/-1; text-align: center;">No agents found.</div>';
-                            return;
-                        }
+                        try {
+                            if (!agents) {
+                                const msg = 'renderAgents: agents is undefined or null';
+                                console.error(msg);
+                                container.innerHTML = \`<div style="grid-column: 1/-1; text-align: center;">\${msg}</div>\`;
+                                return;
+                            }
+                            container.innerHTML = '';
+                            if (agents.length === 0) {
+                                container.innerHTML = '<div style="grid-column: 1/-1; text-align: center;">No agents found.</div>';
+                                return;
+                            }
 
-                        agents.forEach(agent => {
-                            const isInstalled = installedAgentNames.has(agent.name);
-                            const card = document.createElement('div');
-                            card.className = 'card';
-                            
-                            const tagsHtml = (agent.tags || []).slice(0, 3).map(tag => \`<span class="tag">\${tag}</span>\`).join('');
+agents.forEach(agent => {
+    const isInstalled = installedAgentNames.has(agent.name);
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const tagsHtml = (agent.tags || []).slice(0, 3).map(tag => \`<span class="tag">\${tag}</span>\`).join('');
                             
                             // Clean description quotes
                             let cleanDesc = agent.description || 'No description';
@@ -335,9 +342,13 @@ export class AgentMarketplaceProvider implements vscode.WebviewViewProvider {
 
                             container.appendChild(card);
                         });
+                    } catch (e) {
+                        console.error('Error rendering agents:', e);
+                        container.innerHTML = \`<div style="grid-column: 1/-1; text-align: center; color: var(--vscode-errorForeground);">Error rendering: \${e.message}</div>\`;
                     }
-                </script>
-			</body>
-			</html>`;
+                }
+    </script>
+    </body>
+    </html>`;
     }
 }
