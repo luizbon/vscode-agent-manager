@@ -35,7 +35,10 @@ suite('AgentDiscovery Test Suite', () => {
             const res = new EventEmitter() as any;
             res.statusCode = 404; // Simulate Not Found
             if (callback) callback(res);
-            return new EventEmitter() as any;
+            const req = new EventEmitter() as any;
+            req.setTimeout = () => req;
+            req.destroy = () => { };
+            return req;
         });
 
         // Suppress console.error
@@ -78,25 +81,28 @@ This is a test agent.
                 return res;
             };
             res.pipe = (dest: any) => stream.pipe(dest); // Not needed for simple data
-            
+
             if (typeof url === 'string' && url.includes('/git/trees/')) {
-                 res.statusCode = 200;
-                 // It's recursive
-                 stream.write(JSON.stringify(treeResponse));
+                res.statusCode = 200;
+                // It's recursive
+                stream.write(JSON.stringify(treeResponse));
             } else if (typeof url === 'string' && url.endsWith('test.agent.md')) {
-                 res.statusCode = 200;
-                 stream.write(agentContent);
+                res.statusCode = 200;
+                stream.write(agentContent);
             } else {
-                 res.statusCode = 404;
+                res.statusCode = 404;
             }
             stream.end();
 
             if (callback) callback(res);
-            return new EventEmitter() as any;
+            const req = new EventEmitter() as any;
+            req.setTimeout = () => req;
+            req.destroy = () => { };
+            return req;
         });
 
         const agents = await agentDiscovery.fetchAgentsFromRepo('https://github.com/owner/repo');
-        
+
         assert.strictEqual(agents.length, 1);
         assert.strictEqual(agents[0].name, 'Test Agent');
         assert.strictEqual(agents[0].version, '1.0.0');
