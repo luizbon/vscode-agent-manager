@@ -169,7 +169,12 @@ export class AgentDetailsPanel {
             const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
             const config = vscode.workspace.getConfiguration('chat');
             const configLocations = config.get<string[]>('agentFilesLocations');
-            const locations = Array.isArray(configLocations) ? configLocations : [];
+            const locations: string[] = [];
+            if (Array.isArray(configLocations)) {
+                for (let i = 0; i < configLocations.length; i++) {
+                    locations.push(configLocations[i]);
+                }
+            }
 
             // Add default location to the check list if not explicitly present (though priority implies explicit config first)
             // But let's check config first, then default.
