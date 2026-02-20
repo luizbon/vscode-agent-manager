@@ -13,29 +13,36 @@ jobs:
   build:
     runs-on: ubuntu-latest
     outputs:
-      semver: ${{ steps.gitversion.outputs.semVer }}
+      semver: ${{ steps.versioning.outputs.semver }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v4.2.0
-        with:
-          versionSpec: '6.4.x'
-
-      - name: Determine Version
-        id: gitversion
-        uses: gittools/actions/gitversion/execute@v4.2.0
-
-      - name: Update package.json version
+      - name: Calculate and Update Version
+        id: versioning
         run: |
-          VERSION="${{ steps.gitversion.outputs.semVer }}"
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MAJOR=$(echo $BASE_VERSION | cut -d. -f1)
+          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          
           if [ "${{ github.event_name }}" == "pull_request" ]; then
-            VERSION="${{ steps.gitversion.outputs.major }}.${{ steps.gitversion.outputs.minor }}.${{ github.run_number }}"
+            # Pre-release path: Ensure minor is ODD
+            if [ $((MINOR % 2)) -eq 0 ]; then
+              MINOR=$((MINOR + 1))
+            fi
+          else
+            # Release path: Ensure minor is EVEN
+            if [ $((MINOR % 2)) -ne 0 ]; then
+              MINOR=$((MINOR + 1))
+            fi
           fi
+          
+          VERSION="${MAJOR}.${MINOR}.${{ github.run_number }}"
+          echo "Calculated version: $VERSION"
           npm version $VERSION --no-git-tag-version --allow-same-version
+          echo "semver=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -70,7 +77,6 @@ jobs:
             resources/
             package.json
             package-lock.json
-            GitVersion.yml
             .vscodeignore
             README.md
 
