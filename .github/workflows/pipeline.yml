@@ -133,6 +133,8 @@ jobs:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'pre-release')
     runs-on: ubuntu-latest
     environment: Pre-Release
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
