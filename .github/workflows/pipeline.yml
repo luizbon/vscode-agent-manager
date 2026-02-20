@@ -108,14 +108,13 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install Production Dependencies
-        run: npm ci --omit=dev
+      - name: Install Dependencies
+        run: npm ci
 
       - name: Publish to VS Code Marketplace
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm pkg delete scripts.vscode:prepublish || true
           
           BASE_VERSION=$(node -p "require('./package.json').version")
           MINOR=$(echo $BASE_VERSION | cut -d. -f2)
@@ -152,14 +151,13 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install Production Dependencies
-        run: npm ci --omit=dev
+      - name: Install Dependencies
+        run: npm ci
 
       - name: Publish Pre-release to VS Code Marketplace
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm pkg delete scripts.vscode:prepublish || true
           
           BASE_VERSION=$(node -p "require('./package.json').version")
           MINOR=$(echo $BASE_VERSION | cut -d. -f2)
