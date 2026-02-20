@@ -12,6 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       semver: ${{ steps.versioning.outputs.semver }}
     steps:
@@ -43,6 +45,12 @@ jobs:
           echo "Calculated version: $VERSION"
           npm version $VERSION --no-git-tag-version --allow-same-version
           echo "semver=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit Updated Version
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: bump version to ${{ steps.versioning.outputs.semver }} [skip ci]"
+          file_pattern: package.json package-lock.json
 
       - name: Install Node.js
         uses: actions/setup-node@v4
