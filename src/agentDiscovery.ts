@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { GithubApi } from './githubApi';
+import * as fs from 'fs';
+import { GitService } from './gitService';
 
 export interface Agent {
     name: string;
@@ -16,7 +17,7 @@ export interface Agent {
 export class AgentDiscovery {
     private agents: Agent[] = [];
 
-    constructor() { }
+    constructor(private globalStorageUri: vscode.Uri) { }
 
     public async searchAgents(repositories: string[]): Promise<Agent[]> {
         this.agents = [];
@@ -33,61 +34,50 @@ export class AgentDiscovery {
     }
 
     public async fetchAgentsFromRepo(repoUrl: string): Promise<Agent[]> {
-        const ownerRepo = this.parseGitHubUrl(repoUrl);
-        if (!ownerRepo) {
-            throw new Error('Invalid GitHub URL');
-        }
+        const gitService = new GitService();
+        const baseDir = this.globalStorageUri.fsPath;
+        const repoDirName = gitService.getRepoDirName(repoUrl);
+        const destPath = path.join(baseDir, 'repos', repoDirName);
 
-        const { owner, repo } = ownerRepo;
-        const tree = await this.fetchGitHubTree(owner, repo);
+        await gitService.cloneOrPullRepo(repoUrl, destPath);
 
-        const agentFiles = tree.filter((item: any) => item.path.endsWith('.agent.md'));
+        const agentFilePaths = await this.findAgentFiles(destPath);
         const agents: Agent[] = [];
 
-        for (const file of agentFiles) {
+        for (const filePath of agentFilePaths) {
             try {
-                const content = await this.fetchGitHubFileContent(owner, repo, file.path);
-                const agent = this.parseAgentFile(content, repoUrl, file.path);
+                const content = await fs.promises.readFile(filePath, 'utf-8');
+                const agent = this.parseAgentFile(content, repoUrl, filePath);
                 if (agent) {
                     agents.push(agent);
                 }
             } catch (error) {
-                console.error(`Failed to parse agent ${file.path}:`, error);
+                console.error(`Failed to parse agent ${filePath}:`, error);
             }
         }
 
         return agents;
     }
 
-    public parseGitHubUrl(url: string): { owner: string, repo: string } | null {
-        // support https://github.com/OWNER/REPO
-        const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)/);
-        if (match) {
-            return { owner: match[1], repo: match[2].replace('.git', '') };
-        }
-        return null;
-    }
-
-    private async fetchGitHubTree(owner: string, repo: string): Promise<any[]> {
-        const branches = ['main', 'master'];
-        for (const branch of branches) {
-            try {
-                const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-                const response = await GithubApi.fetch(url);
-                const data = JSON.parse(response);
-                if (data.tree) {
-                    return data.tree;
+    private async findAgentFiles(dir: string): Promise<string[]> {
+        let results: string[] = [];
+        try {
+            if (!fs.existsSync(dir)) { return results; }
+            const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    if (entry.name !== '.git') {
+                        results.push(...await this.findAgentFiles(fullPath));
+                    }
+                } else if (entry.name.endsWith('.agent.md')) {
+                    results.push(fullPath);
                 }
-            } catch (e) {
-                // ignore and try next branch
             }
+        } catch (error) {
+            console.error(`Error reading directory ${dir}:`, error);
         }
-        return [];
-    }
-
-    private async fetchGitHubFileContent(owner: string, repo: string, filePath: string): Promise<string> {
-        const url = `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/${filePath}`;
-        return await GithubApi.fetch(url);
+        return results;
     }
 
     private parseAgentFile(content: string, repo: string, filePath: string): Agent | null {
@@ -140,7 +130,7 @@ export class AgentDiscovery {
             tags: metadata.tags ? metadata.tags.split(',').map((t: string) => t.trim()) : [],
             repository: repo,
             path: filePath,
-            installUrl: `https://raw.githubusercontent.com/${this.parseGitHubUrl(repo)?.owner}/${this.parseGitHubUrl(repo)?.repo}/HEAD/${filePath}` // heuristic
+            installUrl: filePath
         };
     }
 }

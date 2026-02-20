@@ -71,20 +71,14 @@ export class AgentMarketplaceProvider implements vscode.WebviewViewProvider {
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
-        // Get the local path to main script run in the webview, then convert it to a uri we can use in the webview.
-        // const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
-
-        // Do the same for the stylesheet.
-        // const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'reset.css'));
-        // const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
-        // const styleMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
-
         const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
+        const nonce = this.getNonce();
 
         return `<!DOCTYPE html>
 			<html lang="en">
 			<head>
 				<meta charset="UTF-8">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; img-src ${webview.cspSource} https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 				<meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <link href="${codiconsUri}" rel="stylesheet" />
 				<title>Agent Marketplace</title>
@@ -219,7 +213,7 @@ export class AgentMarketplaceProvider implements vscode.WebviewViewProvider {
                     </div>
                 </div>
 
-                <script>
+                <script nonce="${nonce}">
                     const vscode = acquireVsCodeApi();
                     
                     const container = document.getElementById('results-container');
@@ -350,5 +344,14 @@ agents.forEach(agent => {
     </script>
     </body>
     </html>`;
+    }
+
+    private getNonce() {
+        let text = '';
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        for (let i = 0; i < 32; i++) {
+            text += possible.charAt(Math.floor(Math.random() * possible.length));
+        }
+        return text;
     }
 }

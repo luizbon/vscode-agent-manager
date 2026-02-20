@@ -7,30 +7,16 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      semver: ${{ steps.gitversion.outputs.semVer }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v4.2.0
-        with:
-          versionSpec: '6.4.x'
-
-      - name: Determine Version
-        id: gitversion
-        uses: gittools/actions/gitversion/execute@v4.2.0
-
-      - name: Update package.json version
-        run: |
-          npm version ${{ steps.gitversion.outputs.semVer }} --no-git-tag-version --allow-same-version
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -65,7 +51,6 @@ jobs:
             resources/
             package.json
             package-lock.json
-            GitVersion.yml
             .vscodeignore
             README.md
 
@@ -123,17 +108,67 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install Production Dependencies
-        run: npm ci --omit=dev
+      - name: Install Dependencies
+        run: npm ci
 
       - name: Publish to VS Code Marketplace
         run: |
-          npm pkg delete scripts.vscode:prepublish
-          npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          
+          if [ $((MINOR % 2)) -ne 0 ]; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+          
+          npx @vscode/vsce publish $BUMP -p ${{ secrets.VSCE_PAT }}
+          git push origin HEAD:main --follow-tags
 
-      - name: Push Git Tag
+  prerelease:
+    needs: [build, test]
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'pre-release')
+    runs-on: ubuntu-latest
+    environment: Pre-Release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Publish Pre-release to VS Code Marketplace
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git tag v${{ needs.build.outputs.semver }}
-          git push origin v${{ needs.build.outputs.semver }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          
+          if [ $((MINOR % 2)) -eq 0 ]; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+          
+          npx @vscode/vsce publish $BUMP --pre-release -p ${{ secrets.VSCE_PAT }}
+          git push origin HEAD:${{ github.head_ref }} --follow-tags

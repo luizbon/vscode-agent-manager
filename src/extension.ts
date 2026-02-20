@@ -36,7 +36,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     telemetry.sendEvent('activate');
 
-    const agentDiscovery = new AgentDiscovery();
+    const agentDiscovery = new AgentDiscovery(context.globalStorageUri);
     const agentProvider = new AgentProvider(context);
     const marketplaceProvider = new AgentMarketplaceProvider(context.extensionUri);
 

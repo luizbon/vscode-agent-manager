@@ -2,48 +2,38 @@ import * as vscode from 'vscode';
 import { TelemetryService } from './telemetry';
 import { Agent } from './agentDiscovery';
 import { AgentInstaller } from './agentInstaller';
-import { GithubApi } from './githubApi';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { exec } from 'child_process';
 
 export class AgentDetailsPanel {
     // ...
     private fetchUrl(url: string): Promise<string> {
-        return GithubApi.fetch(url);
+        return fs.promises.readFile(url, 'utf-8');
     }
 
     private async fetchLastUpdated(agent: Agent) {
-        const repoRegex = /github\.com\/([^\/]+)\/([^\/]+)/;
-        const match = agent.repository.match(repoRegex);
-        if (!match) { return; }
-
-        const owner = match[1];
-        const repo = match[2];
-
-        let path = '';
-        const rawRegex = /raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/[^\/]+\/(.+)/;
-        const pathMatch = agent.installUrl.match(rawRegex);
-        if (pathMatch) {
-            path = pathMatch[1];
-        }
-
-        if (!path) { return; }
-
-        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/commits?path=${path}&page=1&per_page=1`;
-
         try {
-            const data = await GithubApi.fetch(apiUrl);
-            const commits = JSON.parse(data);
-            if (Array.isArray(commits) && commits.length > 0) {
-                const date = commits[0].commit.author.date;
-                const formattedDate = new Date(date).toLocaleDateString(undefined, {
+            const filePath = agent.installUrl;
+            if (!fs.existsSync(filePath)) { return; }
+
+            const dir = path.dirname(filePath);
+            exec(`git log -1 --format=%cI "${filePath}"`, { cwd: dir }, (error, stdout) => {
+                let dateToUse = new Date();
+                if (!error && stdout.trim()) {
+                    dateToUse = new Date(stdout.trim());
+                } else {
+                    const stat = fs.statSync(filePath);
+                    dateToUse = stat.mtime;
+                }
+                const formattedDate = dateToUse.toLocaleDateString(undefined, {
                     year: 'numeric',
                     month: 'long',
                     day: 'numeric'
                 });
                 this._panel.webview.postMessage({ command: 'updateDate', date: formattedDate });
-            }
+            });
         } catch (e) {
             console.error('Error fetching commit date:', e);
             TelemetryService.getInstance().sendError(e as Error, { context: 'fetchLastUpdated', agent: agent.name });
@@ -178,7 +168,8 @@ export class AgentDetailsPanel {
         if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
             const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
             const config = vscode.workspace.getConfiguration('chat');
-            const locations = config.get<string[]>('agentFilesLocations') || [];
+            const configLocations = config.get<string[]>('agentFilesLocations');
+            const locations = Array.isArray(configLocations) ? configLocations : [];
 
             // Add default location to the check list if not explicitly present (though priority implies explicit config first)
             // But let's check config first, then default.
@@ -256,11 +247,13 @@ export class AgentDetailsPanel {
         // Use a Content Security Policy
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'style.css')); // We can create this later if needed
+        const nonce = this.getNonce();
 
         return `<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>${agent.name}</title>
                 <style>
@@ -295,9 +288,9 @@ export class AgentDetailsPanel {
                 </div>
                 
                 <div class="actions">
-                    <button id="install-btn" onclick="install()" style="display:none;">Install Agent</button>
-                    <button id="update-btn" onclick="install()" style="display:none;">Update Agent</button>
-                    <button id="diff-btn" onclick="showDiff()" style="display:none; margin-left: 10px;">Show Changes</button>
+                    <button id="install-btn" style="display:none;">Install Agent</button>
+                    <button id="update-btn" style="display:none;">Update Agent</button>
+                    <button id="diff-btn" style="display:none; margin-left: 10px;">Show Changes</button>
                     <span id="installed-msg" style="display:none; color: var(--vscode-notebookStatusSuccessIcon-foreground);">✔ Installed (Up to date)</span>
                 </div>
 
@@ -306,7 +299,7 @@ export class AgentDetailsPanel {
                 <h2>Content Preview</h2>
                 <div class="content" id="content">Loading content...</div>
 
-                <script>
+                <script nonce="${nonce}">
                     const vscode = acquireVsCodeApi();
                     let currentLocalPath = '';
                     const searchTerm = "${searchTerm || ''}";
@@ -320,6 +313,14 @@ export class AgentDetailsPanel {
                             vscode.postMessage({ command: 'showDiff', localPath: currentLocalPath });
                         }
                     }
+
+                    const installBtnEl = document.getElementById('install-btn');
+                    const updateBtnEl = document.getElementById('update-btn');
+                    const diffBtnEl = document.getElementById('diff-btn');
+                    
+                    if (installBtnEl) installBtnEl.addEventListener('click', install);
+                    if (updateBtnEl) updateBtnEl.addEventListener('click', install);
+                    if (diffBtnEl) diffBtnEl.addEventListener('click', showDiff);
 
                     window.addEventListener('message', event => {
                         const message = event.data;
@@ -394,5 +395,14 @@ export class AgentDetailsPanel {
                 </script>
             </body>
             </html>`;
+    }
+
+    private getNonce() {
+        let text = '';
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        for (let i = 0; i < 32; i++) {
+            text += possible.charAt(Math.floor(Math.random() * possible.length));
+        }
+        return text;
     }
 }
