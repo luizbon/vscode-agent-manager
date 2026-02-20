@@ -142,11 +142,11 @@
                     "default": [
                         "https://github.com/github/awesome-copilot"
                     ],
-                    "description": "List of GitHub repositories to search for agents.",
+                    "description": "List of Git repositories to search for agents.",
                     "items": {
                         "type": "string",
-                        "description": "GitHub Repository URL",
-                        "pattern": "^https://github\\.com/[^/]+/[^/]+$"
+                        "description": "Git Repository URL",
+                        "pattern": "^(https?://|git@).+$"
                     },
                     "uniqueItems": true
                 },
@@ -193,6 +193,7 @@
     "dependencies": {
         "@vscode/codicons": "^0.0.44",
         "@vscode/extension-telemetry": "^1.5.0",
+        "simple-git": "^3.30.0",
         "source-map-support": "^0.5.21"
     }
 }

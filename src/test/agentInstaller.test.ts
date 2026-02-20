@@ -3,11 +3,8 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as https from 'https';
 import { AgentInstaller } from '../agentInstaller';
 import { Agent } from '../agentDiscovery';
-import { EventEmitter } from 'events';
-import { PassThrough } from 'stream';
 
 suite('AgentInstaller Test Suite', () => {
     let sandbox: sinon.SinonSandbox;
@@ -77,36 +74,8 @@ suite('AgentInstaller Test Suite', () => {
         } as any);
 
         const fsExistsSyncStub = sandbox.stub(fs, 'existsSync').returns(true); // Don't create dir
-        const fsMkdirSyncStub = sandbox.stub(fs, 'mkdirSync');
-
-        const fileStream = new PassThrough() as any;
-        fileStream.close = sandbox.stub();
-        const fsCreateWriteStreamStub = sandbox.stub(fs, 'createWriteStream').returns(fileStream); // Mock file stream
-
-        // Mock https response
-        // Handle (url, cb) or (url, options, cb)
-        const httpsStub = sandbox.stub(https, 'get').callsFake((...args: any[]) => {
-            const cb = args.length > 1 && typeof args[args.length - 1] === 'function' ? args[args.length - 1] : undefined;
-
-            const res = new EventEmitter() as any;
-            res.statusCode = 200;
-            const contentStream = new PassThrough();
-            res.pipe = (dest: any) => {
-                contentStream.pipe(dest);
-                return dest;
-            };
-
-            if (cb) { cb(res); }
-
-            contentStream.write('mock content');
-            contentStream.end();
-
-            const req = new EventEmitter() as any;
-            req.setTimeout = () => req;
-            req.abort = () => { };
-            req.destroy = () => { };
-            return req;
-        });
+        const fsMkdirStub = sandbox.stub(fs.promises, 'mkdir').resolves();
+        const fsCopyFileStub = sandbox.stub(fs.promises, 'copyFile').resolves();
 
         // Stub workspace open/show
         const openDocStub = sandbox.stub(vscode.workspace, 'openTextDocument').resolves({} as any);
@@ -117,7 +86,8 @@ suite('AgentInstaller Test Suite', () => {
         await installer.installAgent(agent);
 
         assert.ok(showQuickPickStub.calledOnce);
-        assert.ok(httpsStub.calledWith(agent.installUrl));
+        assert.ok(fsCopyFileStub.calledWith(agent.installUrl, sinon.match(/agent\.md$/)));
+        assert.ok(fsCopyFileStub.calledWith(agent.installUrl, sinon.match(/\.agent\.md\.base$/)));
         assert.ok(showInfoStub.calledWithMatch(sinon.match(/installed successfully/)));
     });
 });

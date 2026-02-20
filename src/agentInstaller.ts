@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { Agent } from './agentDiscovery';
-import * as https from 'https';
+import { GitService } from './gitService';
 
 export class AgentInstaller {
     constructor(private context: vscode.ExtensionContext) { }
@@ -14,7 +14,57 @@ export class AgentInstaller {
         if (targetPath) {
             // Direct update/overwrite
             try {
-                await this.downloadFile(agent.installUrl, targetPath);
+                const basePath = path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.base`);
+
+                // Do we need to 3-way merge?
+                if (fs.existsSync(basePath) && fs.existsSync(targetPath)) {
+                    const currentContent = await fs.promises.readFile(targetPath, 'utf-8');
+                    const baseContent = await fs.promises.readFile(basePath, 'utf-8');
+
+                    if (currentContent !== baseContent) {
+                        // User modified the file locally
+                        const gitService = new GitService();
+                        const targetBackup = targetPath + '.bak';
+                        await fs.promises.copyFile(targetPath, targetBackup); // Backup user's work
+
+                        const success = await gitService.mergeUpdate(targetPath, basePath, agent.installUrl);
+                        if (!success) {
+                            // File has conflict markers now
+                            const doc = await vscode.workspace.openTextDocument(targetPath);
+                            await vscode.window.showTextDocument(doc);
+
+                            const choice = await vscode.window.showWarningMessage(
+                                `Conflicts found while updating ${agent.name}. Please review the conflict markers in the file.`,
+                                { modal: true },
+                                'Override', 'Keep Merged / Fix Manually', 'Cancel'
+                            );
+
+                            if (choice === 'Cancel') {
+                                // Restore backup
+                                await fs.promises.copyFile(targetBackup, targetPath);
+                                await fs.promises.unlink(targetBackup).catch(() => { });
+                                vscode.window.showInformationMessage('Update cancelled.');
+                                return;
+                            } else if (choice === 'Override') {
+                                // Overwrite completely
+                                await this.copyAgentFile(agent.installUrl, targetPath);
+                            }
+                        }
+
+                        // Clean up backup if not cancelled
+                        await fs.promises.unlink(targetBackup).catch(() => { });
+                    } else {
+                        // User didn't modify it, just overwrite
+                        await this.copyAgentFile(agent.installUrl, targetPath);
+                    }
+                } else {
+                    // No base file or target missing, just overwrite
+                    await this.copyAgentFile(agent.installUrl, targetPath);
+                }
+
+                // Update the base file
+                await this.copyAgentFile(agent.installUrl, basePath);
+
                 vscode.window.showInformationMessage(`Agent ${agent.name} updated successfully at ${targetPath}`);
 
                 const doc = await vscode.workspace.openTextDocument(targetPath);
@@ -84,7 +134,10 @@ export class AgentInstaller {
         }
 
         try {
-            await this.downloadFile(agent.installUrl, installPath);
+            await this.copyAgentFile(agent.installUrl, installPath);
+            const basePath = path.join(path.dirname(installPath), `.${path.basename(installPath)}.base`);
+            await this.copyAgentFile(agent.installUrl, basePath);
+
             vscode.window.showInformationMessage(`Agent ${agent.name} installed successfully to ${installPath}`);
 
             // Open the file
@@ -96,37 +149,12 @@ export class AgentInstaller {
         }
     }
 
-    private async downloadFile(url: string, destPath: string): Promise<void> {
+    private async copyAgentFile(sourcePath: string, destPath: string): Promise<void> {
         // Ensure directory exists
         const dir = path.dirname(destPath);
         if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
+            await fs.promises.mkdir(dir, { recursive: true });
         }
-
-        return new Promise((resolve, reject) => {
-            const file = fs.createWriteStream(destPath);
-            const req = https.get(url, (response) => {
-                if (response.statusCode !== 200) {
-                    reject(new Error(`Failed to download ${url}: Status Code ${response.statusCode}`));
-                    return;
-                }
-                response.pipe(file);
-                file.on('finish', () => {
-                    file.close();
-                    resolve();
-                });
-            });
-
-            req.on('error', (err) => {
-                fs.unlink(destPath, () => { }); // Delete the file async
-                reject(err);
-            });
-
-            req.setTimeout(15000, () => {
-                req.destroy();
-                fs.unlink(destPath, () => { }); // Delete partial file
-                reject(new Error('Download timed out'));
-            });
-        });
+        await fs.promises.copyFile(sourcePath, destPath);
     }
 }

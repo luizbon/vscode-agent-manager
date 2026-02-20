@@ -2,48 +2,38 @@ import * as vscode from 'vscode';
 import { TelemetryService } from './telemetry';
 import { Agent } from './agentDiscovery';
 import { AgentInstaller } from './agentInstaller';
-import { GithubApi } from './githubApi';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { exec } from 'child_process';
 
 export class AgentDetailsPanel {
     // ...
     private fetchUrl(url: string): Promise<string> {
-        return GithubApi.fetch(url);
+        return fs.promises.readFile(url, 'utf-8');
     }
 
     private async fetchLastUpdated(agent: Agent) {
-        const repoRegex = /github\.com\/([^\/]+)\/([^\/]+)/;
-        const match = agent.repository.match(repoRegex);
-        if (!match) { return; }
-
-        const owner = match[1];
-        const repo = match[2];
-
-        let path = '';
-        const rawRegex = /raw\.githubusercontent\.com\/[^\/]+\/[^\/]+\/[^\/]+\/(.+)/;
-        const pathMatch = agent.installUrl.match(rawRegex);
-        if (pathMatch) {
-            path = pathMatch[1];
-        }
-
-        if (!path) { return; }
-
-        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/commits?path=${path}&page=1&per_page=1`;
-
         try {
-            const data = await GithubApi.fetch(apiUrl);
-            const commits = JSON.parse(data);
-            if (Array.isArray(commits) && commits.length > 0) {
-                const date = commits[0].commit.author.date;
-                const formattedDate = new Date(date).toLocaleDateString(undefined, {
+            const filePath = agent.installUrl;
+            if (!fs.existsSync(filePath)) { return; }
+
+            const dir = path.dirname(filePath);
+            exec(`git log -1 --format=%cI "${filePath}"`, { cwd: dir }, (error, stdout) => {
+                let dateToUse = new Date();
+                if (!error && stdout.trim()) {
+                    dateToUse = new Date(stdout.trim());
+                } else {
+                    const stat = fs.statSync(filePath);
+                    dateToUse = stat.mtime;
+                }
+                const formattedDate = dateToUse.toLocaleDateString(undefined, {
                     year: 'numeric',
                     month: 'long',
                     day: 'numeric'
                 });
                 this._panel.webview.postMessage({ command: 'updateDate', date: formattedDate });
-            }
+            });
         } catch (e) {
             console.error('Error fetching commit date:', e);
             TelemetryService.getInstance().sendError(e as Error, { context: 'fetchLastUpdated', agent: agent.name });

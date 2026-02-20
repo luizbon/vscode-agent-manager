@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   build:
@@ -137,3 +138,31 @@ jobs:
           git config user.email "github-actions@github.com"
           git tag v${{ needs.build.outputs.semver }}
           git push origin v${{ needs.build.outputs.semver }}
+
+  prerelease:
+    needs: [build, test]
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'pre-release')
+    runs-on: ubuntu-latest
+    environment: Pre-Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Production Dependencies
+        run: npm ci --omit=dev
+
+      - name: Publish Pre-release to VS Code Marketplace
+        run: |
+          npm pkg delete scripts.vscode:prepublish
+          npx @vscode/vsce publish --pre-release -p ${{ secrets.VSCE_PAT }}
