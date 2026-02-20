@@ -31,7 +31,11 @@ jobs:
 
       - name: Update package.json version
         run: |
-          npm version ${{ steps.gitversion.outputs.semVer }} --no-git-tag-version --allow-same-version
+          VERSION="${{ steps.gitversion.outputs.semVer }}"
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            VERSION="${{ steps.gitversion.outputs.major }}.${{ steps.gitversion.outputs.minor }}.${{ github.run_number }}"
+          fi
+          npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Install Node.js
         uses: actions/setup-node@v4
