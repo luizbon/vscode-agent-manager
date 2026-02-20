@@ -1,199 +1,199 @@
 {
-    "name": "vscode-agent-manager",
-    "displayName": "VS Code Agent Manager",
-    "description": "Search and install GitHub Copilot agents from remote repositories.",
-    "version": "0.0.1",
-    "icon": "resources/agent-manager-logo.png",
-    "publisher": "luizbon",
-    "keywords": [
-        "copilot",
-        "agent",
-        "chat",
-        "github",
-        "ai",
-        "manager"
-    ],
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/luizbon/vscode-agent-manager.git"
-    },
-    "engines": {
-        "vscode": "^1.106.0"
-    },
-    "categories": [
-        "Other"
-    ],
-    "main": "./out/extension.js",
-    "contributes": {
-        "viewsContainers": {
-            "activitybar": [
-                {
-                    "id": "agentManager",
-                    "title": "Agent Manager",
-                    "icon": "resources/agent-manager-icon.svg"
-                }
-            ]
-        },
-        "views": {
-            "agentManager": [
-                {
-                    "type": "webview",
-                    "id": "agentManagerMarketplace",
-                    "name": "Agent Marketplace",
-                    "icon": "$(hubot)"
-                },
-                {
-                    "id": "agentManagerAgents",
-                    "name": "Agent Management",
-                    "icon": "$(list-unordered)"
-                }
-            ]
-        },
-        "menus": {
-            "view/item/context": [
-                {
-                    "command": "agentManager.install",
-                    "when": "view == agentManagerAgents && viewItem == agent:available",
-                    "group": "inline"
-                },
-                {
-                    "command": "agentManager.update",
-                    "when": "view == agentManagerAgents && viewItem == agent:installed:outdated",
-                    "group": "inline"
-                },
-                {
-                    "command": "agentManager.uninstall",
-                    "when": "view == agentManagerAgents && (viewItem == agent:installed || viewItem == agent:installed:outdated)",
-                    "group": "inline"
-                },
-                {
-                    "command": "agentManager.refreshSource",
-                    "when": "view == agentManagerAgents && viewItem == repository",
-                    "group": "inline"
-                }
-            ],
-            "view/title": [
-                {
-                    "command": "agentManager.search",
-                    "when": "view == agentManagerAgents",
-                    "group": "navigation"
-                },
-                {
-                    "command": "agentManager.openSettings",
-                    "when": "view == agentManagerAgents",
-                    "group": "navigation"
-                },
-                {
-                    "command": "agentManager.feedback",
-                    "when": "view == agentManagerAgents",
-                    "group": "navigation"
-                }
-            ]
-        },
-        "commands": [
-            {
-                "command": "agentManager.search",
-                "title": "Refresh Agents",
-                "category": "Agent Manager",
-                "icon": "$(refresh)"
-            },
-            {
-                "command": "agentManager.install",
-                "title": "Install Agent",
-                "category": "Agent Manager",
-                "icon": "$(cloud-download)"
-            },
-            {
-                "command": "agentManager.openSettings",
-                "title": "Agent Settings",
-                "category": "Agent Manager",
-                "icon": "$(gear)"
-            },
-            {
-                "command": "agentManager.refreshSource",
-                "title": "Refresh Source",
-                "category": "Agent Manager",
-                "icon": "$(refresh)"
-            },
-            {
-                "command": "agentManager.update",
-                "title": "Update Agent",
-                "category": "Agent Manager",
-                "icon": "$(sync)"
-            },
-            {
-                "command": "agentManager.uninstall",
-                "title": "Uninstall Agent",
-                "category": "Agent Manager",
-                "icon": "$(trash)"
-            },
-            {
-                "command": "agentManager.feedback",
-                "title": "Send Feedback",
-                "category": "Agent Manager",
-                "icon": "$(comment-discussion)"
-            }
-        ],
-        "configuration": {
-            "title": "Agent Manager",
-            "properties": {
-                "agentManager.repositories": {
-                    "type": "array",
-                    "default": [
-                        "https://github.com/github/awesome-copilot"
-                    ],
-                    "description": "List of Git repositories to search for agents.",
-                    "items": {
-                        "type": "string",
-                        "description": "Git Repository URL",
-                        "pattern": "^(https?://|git@).+$"
-                    },
-                    "uniqueItems": true
-                },
-                "agentManager.cacheDurationDays": {
-                    "type": "number",
-                    "default": 7,
-                    "description": "Number of days to keep the agent cache before automatically refreshing."
-                },
-                "agentManager.enableTelemetry": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Enable telemetry collection for Agent Manager."
-                }
-            }
+  "name": "vscode-agent-manager",
+  "displayName": "VS Code Agent Manager",
+  "description": "Search and install GitHub Copilot agents from remote repositories.",
+  "version": "0.1.19",
+  "icon": "resources/agent-manager-logo.png",
+  "publisher": "luizbon",
+  "keywords": [
+    "copilot",
+    "agent",
+    "chat",
+    "github",
+    "ai",
+    "manager"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luizbon/vscode-agent-manager.git"
+  },
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentManager",
+          "title": "Agent Manager",
+          "icon": "resources/agent-manager-icon.svg"
         }
+      ]
     },
-    "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "clean": "rm -rf out",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "pretest": "npm run compile && npm run lint",
-        "lint": "eslint src",
-        "test": "vscode-test --config vscode.config.mjs"
+    "views": {
+      "agentManager": [
+        {
+          "type": "webview",
+          "id": "agentManagerMarketplace",
+          "name": "Agent Marketplace",
+          "icon": "$(hubot)"
+        },
+        {
+          "id": "agentManagerAgents",
+          "name": "Agent Management",
+          "icon": "$(list-unordered)"
+        }
+      ]
     },
-    "devDependencies": {
-        "@istanbuljs/nyc-config-typescript": "^1.0.2",
-        "@types/mocha": "^10.0.6",
-        "@types/node": "24.10.13",
-        "@types/sinon": "^21.0.0",
-        "@types/vscode": "^1.96.0",
-        "@typescript-eslint/eslint-plugin": "^8.56.0",
-        "@typescript-eslint/parser": "^8.56.0",
-        "@vscode/test-cli": "^0.0.12",
-        "@vscode/test-electron": "^2.3.9",
-        "eslint": "^10.0.0",
-        "istanbul-lib-instrument": "^6.0.3",
-        "mocha": "^11.7.5",
-        "nyc": "^17.1.0",
-        "sinon": "^21.0.1",
-        "ts-node": "^10.9.2",
-        "typescript": "^5.3.3"
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "agentManager.install",
+          "when": "view == agentManagerAgents && viewItem == agent:available",
+          "group": "inline"
+        },
+        {
+          "command": "agentManager.update",
+          "when": "view == agentManagerAgents && viewItem == agent:installed:outdated",
+          "group": "inline"
+        },
+        {
+          "command": "agentManager.uninstall",
+          "when": "view == agentManagerAgents && (viewItem == agent:installed || viewItem == agent:installed:outdated)",
+          "group": "inline"
+        },
+        {
+          "command": "agentManager.refreshSource",
+          "when": "view == agentManagerAgents && viewItem == repository",
+          "group": "inline"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "agentManager.search",
+          "when": "view == agentManagerAgents",
+          "group": "navigation"
+        },
+        {
+          "command": "agentManager.openSettings",
+          "when": "view == agentManagerAgents",
+          "group": "navigation"
+        },
+        {
+          "command": "agentManager.feedback",
+          "when": "view == agentManagerAgents",
+          "group": "navigation"
+        }
+      ]
     },
-    "dependencies": {
-        "@vscode/codicons": "^0.0.44",
-        "@vscode/extension-telemetry": "^1.5.0",
-        "simple-git": "^3.30.0",
-        "source-map-support": "^0.5.21"
+    "commands": [
+      {
+        "command": "agentManager.search",
+        "title": "Refresh Agents",
+        "category": "Agent Manager",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentManager.install",
+        "title": "Install Agent",
+        "category": "Agent Manager",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "agentManager.openSettings",
+        "title": "Agent Settings",
+        "category": "Agent Manager",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "agentManager.refreshSource",
+        "title": "Refresh Source",
+        "category": "Agent Manager",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentManager.update",
+        "title": "Update Agent",
+        "category": "Agent Manager",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "agentManager.uninstall",
+        "title": "Uninstall Agent",
+        "category": "Agent Manager",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentManager.feedback",
+        "title": "Send Feedback",
+        "category": "Agent Manager",
+        "icon": "$(comment-discussion)"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Manager",
+      "properties": {
+        "agentManager.repositories": {
+          "type": "array",
+          "default": [
+            "https://github.com/github/awesome-copilot"
+          ],
+          "description": "List of Git repositories to search for agents.",
+          "items": {
+            "type": "string",
+            "description": "Git Repository URL",
+            "pattern": "^(https?://|git@).+$"
+          },
+          "uniqueItems": true
+        },
+        "agentManager.cacheDurationDays": {
+          "type": "number",
+          "default": 7,
+          "description": "Number of days to keep the agent cache before automatically refreshing."
+        },
+        "agentManager.enableTelemetry": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable telemetry collection for Agent Manager."
+        }
+      }
     }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "clean": "rm -rf out",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test --config vscode.config.mjs"
+  },
+  "devDependencies": {
+    "@istanbuljs/nyc-config-typescript": "^1.0.2",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "24.10.13",
+    "@types/sinon": "^21.0.0",
+    "@types/vscode": "^1.96.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.3.9",
+    "eslint": "^10.0.0",
+    "istanbul-lib-instrument": "^6.0.3",
+    "mocha": "^11.7.5",
+    "nyc": "^17.1.0",
+    "sinon": "^21.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.44",
+    "@vscode/extension-telemetry": "^1.5.0",
+    "simple-git": "^3.30.0",
+    "source-map-support": "^0.5.21"
+  }
 }
