@@ -168,7 +168,8 @@ export class AgentDetailsPanel {
         if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
             const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
             const config = vscode.workspace.getConfiguration('chat');
-            const locations = config.get<string[]>('agentFilesLocations') || [];
+            const configLocations = config.get<string[]>('agentFilesLocations');
+            const locations = Array.isArray(configLocations) ? configLocations : [];
 
             // Add default location to the check list if not explicitly present (though priority implies explicit config first)
             // But let's check config first, then default.
@@ -246,11 +247,13 @@ export class AgentDetailsPanel {
         // Use a Content Security Policy
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'style.css')); // We can create this later if needed
+        const nonce = this.getNonce();
 
         return `<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>${agent.name}</title>
                 <style>
@@ -285,9 +288,9 @@ export class AgentDetailsPanel {
                 </div>
                 
                 <div class="actions">
-                    <button id="install-btn" onclick="install()" style="display:none;">Install Agent</button>
-                    <button id="update-btn" onclick="install()" style="display:none;">Update Agent</button>
-                    <button id="diff-btn" onclick="showDiff()" style="display:none; margin-left: 10px;">Show Changes</button>
+                    <button id="install-btn" style="display:none;">Install Agent</button>
+                    <button id="update-btn" style="display:none;">Update Agent</button>
+                    <button id="diff-btn" style="display:none; margin-left: 10px;">Show Changes</button>
                     <span id="installed-msg" style="display:none; color: var(--vscode-notebookStatusSuccessIcon-foreground);">✔ Installed (Up to date)</span>
                 </div>
 
@@ -296,7 +299,7 @@ export class AgentDetailsPanel {
                 <h2>Content Preview</h2>
                 <div class="content" id="content">Loading content...</div>
 
-                <script>
+                <script nonce="${nonce}">
                     const vscode = acquireVsCodeApi();
                     let currentLocalPath = '';
                     const searchTerm = "${searchTerm || ''}";
@@ -310,6 +313,14 @@ export class AgentDetailsPanel {
                             vscode.postMessage({ command: 'showDiff', localPath: currentLocalPath });
                         }
                     }
+
+                    const installBtnEl = document.getElementById('install-btn');
+                    const updateBtnEl = document.getElementById('update-btn');
+                    const diffBtnEl = document.getElementById('diff-btn');
+                    
+                    if (installBtnEl) installBtnEl.addEventListener('click', install);
+                    if (updateBtnEl) updateBtnEl.addEventListener('click', install);
+                    if (diffBtnEl) diffBtnEl.addEventListener('click', showDiff);
 
                     window.addEventListener('message', event => {
                         const message = event.data;
@@ -384,5 +395,14 @@ export class AgentDetailsPanel {
                 </script>
             </body>
             </html>`;
+    }
+
+    private getNonce() {
+        let text = '';
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        for (let i = 0; i < 32; i++) {
+            text += possible.charAt(Math.floor(Math.random() * possible.length));
+        }
+        return text;
     }
 }

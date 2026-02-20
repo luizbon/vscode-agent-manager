@@ -8,9 +8,15 @@ const INSTRUMENTATION_KEY = '00000000-0000-0000-0000-000000000000';
 export class TelemetryService {
     private static instance: TelemetryService;
     private reporter: TelemetryReporter;
+    private outputChannel?: vscode.OutputChannel;
+    private isLocalLog: boolean = false;
 
     private constructor() {
         this.reporter = new TelemetryReporter(INSTRUMENTATION_KEY);
+        if (!INSTRUMENTATION_KEY || INSTRUMENTATION_KEY === '00000000-0000-0000-0000-000000000000') {
+            this.isLocalLog = true;
+            this.outputChannel = vscode.window.createOutputChannel('Agent Manager Telemetry');
+        }
     }
 
     private get isEnabled(): boolean {
@@ -27,19 +33,29 @@ export class TelemetryService {
     public sendEvent(eventName: string, properties?: { [key: string]: string }, measurements?: { [key: string]: number }): void {
         if (this.isEnabled) {
             const commonProperties = this.getCommonProperties();
-            this.reporter.sendTelemetryEvent(eventName, { ...commonProperties, ...properties }, measurements);
+            const props = { ...commonProperties, ...properties };
+            if (this.isLocalLog) {
+                this.outputChannel?.appendLine(`[Event] ${eventName} | Props: ${JSON.stringify(props)} | Metrics: ${JSON.stringify(measurements || {})}`);
+            } else {
+                this.reporter.sendTelemetryEvent(eventName, props, measurements);
+            }
         }
     }
 
     public sendError(error: Error, properties?: { [key: string]: string }, measurements?: { [key: string]: number }): void {
         if (this.isEnabled) {
             const commonProperties = this.getCommonProperties();
-            this.reporter.sendTelemetryErrorEvent('error', {
+            const props = {
                 ...commonProperties,
                 ...properties,
                 message: error.message,
                 stack: error.stack || ''
-            }, measurements);
+            };
+            if (this.isLocalLog) {
+                this.outputChannel?.appendLine(`[Error] ${error.message} | Props: ${JSON.stringify(props)} | Metrics: ${JSON.stringify(measurements || {})}`);
+            } else {
+                this.reporter.sendTelemetryErrorEvent('error', props, measurements);
+            }
         }
     }
 

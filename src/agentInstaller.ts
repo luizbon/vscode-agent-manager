@@ -80,7 +80,8 @@ export class AgentInstaller {
         if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
             const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
             const config = vscode.workspace.getConfiguration('chat');
-            const locations = config.get<string[]>('agentFilesLocations') || [];
+            const configLocations = config.get<string[]>('agentFilesLocations');
+            const locations = Array.isArray(configLocations) ? configLocations : [];
 
             if (locations.length > 0) {
                 for (const loc of locations) {

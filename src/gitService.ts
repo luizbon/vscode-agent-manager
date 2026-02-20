@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { exec } from 'child_process';
 import { simpleGit, SimpleGit } from 'simple-git';
+import { TelemetryService } from './telemetry';
 
 export class GitService {
     private useFallback = false;
@@ -38,6 +39,7 @@ export class GitService {
             }
         } catch (error) {
             console.warn(`Native git clone failed for ${repoUrl}. Falling back to simple-git. Error: ${error}`);
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.clone', repoUrl });
             this.useFallback = true;
             await this.cloneFallback(repoUrl, destPath);
         }
@@ -53,20 +55,31 @@ export class GitService {
             }
         } catch (error) {
             console.warn(`Native git pull failed in ${destPath}. Falling back to simple-git. Error: ${error}`);
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.pull', destPath });
             this.useFallback = true;
             await this.pullFallback(destPath);
         }
     }
 
     private async cloneFallback(repoUrl: string, destPath: string): Promise<void> {
-        const git: SimpleGit = simpleGit();
-        await git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch']);
+        try {
+            const git: SimpleGit = simpleGit();
+            await git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch']);
+        } catch (error) {
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.cloneFallback', repoUrl });
+            throw error;
+        }
     }
 
     private async pullFallback(destPath: string): Promise<void> {
-        const git: SimpleGit = simpleGit(destPath);
-        await git.fetch(['--depth', '1']);
-        await git.raw(['reset', '--hard', 'origin/HEAD']);
+        try {
+            const git: SimpleGit = simpleGit(destPath);
+            await git.fetch(['--depth', '1']);
+            await git.raw(['reset', '--hard', 'origin/HEAD']);
+        } catch (error) {
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.pullFallback', destPath });
+            throw error;
+        }
     }
 
     public async mergeUpdate(currentFile: string, baseFile: string, newFile: string): Promise<boolean> {
@@ -83,6 +96,7 @@ export class GitService {
                 return false;
             }
             // If it's another error, try fallback
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.mergeUpdate.exec', currentFile });
             if (!this.useFallback) {
                 this.useFallback = true;
                 return await this.mergeUpdateFallback(currentFile, baseFile, newFile);
@@ -105,6 +119,7 @@ export class GitService {
             }
             // For general errors that throw, simple-git throws an error object.
             // If it exits with >0 due to conflicts, simple-git usually throws an async error.
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.mergeUpdateFallback', currentFile });
             return false;
         }
     }
