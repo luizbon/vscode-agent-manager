@@ -270,6 +270,15 @@ export class AgentMarketplaceProvider implements vscode.WebviewViewProvider {
                         }
                     });
 
+                    function escapeHtml(unsafe) {
+                        return String(unsafe || '')
+                             .replace(/&/g, "&amp;")
+                             .replace(/</g, "&lt;")
+                             .replace(/>/g, "&gt;")
+                             .replace(/"/g, "&quot;")
+                             .replace(/'/g, "&#039;");
+                     }
+
                     function renderAgents(agents) {
                         try {
                             if (!agents) {
@@ -289,11 +298,15 @@ agents.forEach(agent => {
     const card = document.createElement('div');
     card.className = 'card';
 
-    const tagsHtml = (agent.tags || []).slice(0, 3).map(tag => \`<span class="tag">\${tag}</span>\`).join('');
+    const tagsHtml = (agent.tags || []).slice(0, 3).map(tag => \`<span class="tag">\${escapeHtml(tag)}</span>\`).join('');
                             
                             // Clean description quotes
                             let cleanDesc = agent.description || 'No description';
                             cleanDesc = cleanDesc.replace(/^['"]+|['"]+$/g, '');
+
+                            const safeName = escapeHtml(agent.name);
+                            const safeDesc = escapeHtml(cleanDesc);
+                            const safeVersion = agent.version ? \`<span class="card-version">v\${escapeHtml(agent.version)}</span>\` : '';
 
                             let actionButtons = '';
                             if (isInstalled) {
@@ -310,10 +323,10 @@ agents.forEach(agent => {
 
                             card.innerHTML = \`
                                 <div class="card-header">
-                                    <h3 class="card-title">\${agent.name}</h3>
-                                    \${agent.version ? \`<span class="card-version">v\${agent.version}</span>\` : ''}
+                                    <h3 class="card-title">\${safeName}</h3>
+                                    \${safeVersion}
                                 </div>
-                                <div class="card-desc" title="\${cleanDesc}">\${cleanDesc}</div>
+                                <div class="card-desc" title="\${safeDesc}">\${safeDesc}</div>
                                 <div class="tags">\${tagsHtml}</div>
                                 <div class="actions">
                                     \${actionButtons}

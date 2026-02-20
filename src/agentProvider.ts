@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Agent, AgentDiscovery } from './agentDiscovery';
+import { AgentParser } from './agentParser';
 
 export class AgentProvider implements vscode.TreeDataProvider<RegistryItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<RegistryItem | undefined | null | void> = new vscode.EventEmitter<RegistryItem | undefined | null | void>();
@@ -98,10 +99,8 @@ export class AgentProvider implements vscode.TreeDataProvider<RegistryItem> {
                 try {
                     const content = await vscode.workspace.fs.readFile(file);
                     // Use fsPath for local parsing
-                    const agent = this.parseLocalAgent(content.toString(), file.fsPath);
+                    const agent = AgentParser.parse(content.toString(), 'Workspace', file.fsPath);
                     if (agent) {
-                        agent.repository = 'Workspace'; // Mark as Workspace
-                        agent.path = file.fsPath; // Ensure path is string
                         newInstalledAgents.push(agent);
                     }
                 } catch (e) {
@@ -122,10 +121,8 @@ export class AgentProvider implements vscode.TreeDataProvider<RegistryItem> {
                 for (const file of globalFiles) {
                     const fullPath = path.join(userPath, file);
                     const content = fs.readFileSync(fullPath, 'utf8');
-                    const agent = this.parseLocalAgent(content, fullPath);
+                    const agent = AgentParser.parse(content, 'Global', fullPath);
                     if (agent) {
-                        agent.repository = 'Global'; // Mark as Global
-                        agent.path = fullPath;
                         newInstalledAgents.push(agent);
                     }
                 }
@@ -138,38 +135,7 @@ export class AgentProvider implements vscode.TreeDataProvider<RegistryItem> {
         this._onDidChangeTreeData.fire();
     }
 
-    // Re-use parsing logic (simplified) or move parsing to a shared utility
-    private parseLocalAgent(content: string, filePath: string): Agent | null {
-        // Re-implementing a simple parser or we should export parseAgentFile from AgentDiscovery 
-        // For now, simple extraction
-        const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
-        const match = content.match(frontmatterRegex);
 
-        let name = path.basename(filePath, '.agent.md');
-        let description = '';
-        let version = '';
-
-        if (match) {
-            const yaml = match[1];
-            const nameMatch = yaml.match(/^name:\s*(.*)$/m);
-            if (nameMatch) { name = nameMatch[1].trim().replace(/^['"]+|['"]+$/g, ''); }
-
-            const descMatch = yaml.match(/^description:\s*(.*)$/m);
-            if (descMatch) { description = descMatch[1].trim(); }
-
-            const verMatch = yaml.match(/^version:\s*(.*)$/m);
-            if (verMatch) { version = verMatch[1].trim(); }
-        }
-
-        return {
-            name,
-            description,
-            version,
-            path: filePath,
-            repository: 'Local',
-            installUrl: filePath
-        };
-    }
 
     private checkUpdateAvailable(installedAgent: Agent): Agent | undefined {
         for (const [repo, data] of this.repoAgents) {

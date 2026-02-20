@@ -9,6 +9,13 @@ import { AgentDetailsPanel } from './agentDetailsPanel';
 import { AgentMarketplaceProvider } from './agentMarketplace';
 import { TelemetryService } from './telemetry';
 
+function extractAgent(item: any): Agent | undefined {
+    if (!item) { return undefined; }
+    if (item.agent && item.agent.name) { return item.agent as Agent; }
+    if (item.name && item.repository) { return item as Agent; }
+    if (item.arguments && item.arguments[0] && item.arguments[0].name) { return item.arguments[0] as Agent; }
+    return undefined;
+}
 export function activate(context: vscode.ExtensionContext) {
     console.log('Congratulations, your extension "vscode-agent-manager" is now active!');
 
@@ -162,14 +169,7 @@ export function activate(context: vscode.ExtensionContext) {
     // ... existing commands ...
 
     let installDisposable = vscode.commands.registerCommand('agentManager.install', async (item: any) => {
-        // item is AgentTreeItem if called from tree view
-        // If called from webview, item might be { agent: ... }
-        let agent = item?.agent || item?.arguments?.[0]; // Handle different call signatures if needed
-        if (!agent && item && item.agent) { agent = item.agent; } // AgentTreeItem
-        if (!agent && item && item.name) { agent = item; } // Direct agent object
-        // If simply passed as argument from webview messsage
-        if (!agent && item.name && item.repository) { agent = item; }
-
+        const agent = extractAgent(item);
 
         if (agent) {
             try {
@@ -190,27 +190,27 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     let updateDisposable = vscode.commands.registerCommand('agentManager.update', async (item: any) => {
-        // item is AgentTreeItem
-        if (item && item.updateAgent) {
+        const agent = extractAgent(item);
+        if (agent && item.updateAgent) {
             try {
                 telemetry.sendEvent('update.start', { agent: item.agent.name });
                 const installer = new AgentInstaller(context);
                 // Quick update: overwrite the existing file
-                // We know the installed path from item.agent.path
-                await installer.installAgent(item.updateAgent, item.agent.path);
+                // We know the installed path from agent.path
+                await installer.installAgent(item.updateAgent, agent.path);
 
                 // Refresh
                 await agentProvider.refreshInstalledAgents();
-                telemetry.sendEvent('update.success', { agent: item.agent.name });
+                telemetry.sendEvent('update.success', { agent: agent.name });
             } catch (error) {
-                telemetry.sendError(error as Error, { context: 'update', agent: item.agent.name });
+                telemetry.sendError(error as Error, { context: 'update', agent: agent.name });
                 vscode.window.showErrorMessage(`Failed to update agent: ${error}`);
             }
         }
     });
 
     let uninstallDisposable = vscode.commands.registerCommand('agentManager.uninstall', async (item: any) => {
-        let agent = item?.agent || item; // Handle TreeItem or direct agent object
+        const agent = extractAgent(item);
         if (!agent) { return; }
 
         // Find the installed agent to get the path

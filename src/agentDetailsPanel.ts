@@ -5,7 +5,7 @@ import { AgentInstaller } from './agentInstaller';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 
 export class AgentDetailsPanel {
     // ...
@@ -19,7 +19,7 @@ export class AgentDetailsPanel {
             if (!fs.existsSync(filePath)) { return; }
 
             const dir = path.dirname(filePath);
-            exec(`git log -1 --format=%cI "${filePath}"`, { cwd: dir }, (error, stdout) => {
+            execFile('git', ['log', '-1', '--format=%cI', filePath], { cwd: dir }, (error: any, stdout: string) => {
                 let dateToUse = new Date();
                 if (!error && stdout.trim()) {
                     dateToUse = new Date(stdout.trim());
@@ -248,11 +248,24 @@ export class AgentDetailsPanel {
         }
     }
 
+    private escapeHtml(unsafe: string | undefined): string {
+        if (!unsafe) { return ''; }
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview, agent: Agent, searchTerm?: string) {
         // Use a Content Security Policy
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'style.css')); // We can create this later if needed
         const nonce = this.getNonce();
+
+        const safeName = this.escapeHtml(agent.name);
+        const safeRepo = this.escapeHtml(agent.repository);
 
         return `<!DOCTYPE html>
             <html lang="en">
@@ -260,7 +273,7 @@ export class AgentDetailsPanel {
                 <meta charset="UTF-8">
                 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>${agent.name}</title>
+                <title>${safeName}</title>
                 <style>
                     body { font-family: var(--vscode-font-family); padding: 20px; color: var(--vscode-editor-foreground); }
                     h1 { font-size: 1.5em; margin-bottom: 0.5em; }
@@ -285,9 +298,9 @@ export class AgentDetailsPanel {
                 </style>
             </head>
             <body>
-                <h1>${agent.name}</h1>
+                <h1>${safeName}</h1>
                 <div class="meta">
-                    <p><strong>Repository:</strong> <a href="${agent.repository}">${agent.repository}</a></p>
+                    <p><strong>Repository:</strong> <a href="${safeRepo}">${safeRepo}</a></p>
                     <p id="last-updated"><strong>Last Updated:</strong> Loading...</p>
                     <p id="install-status"><strong>Status:</strong> Checking...</p>
                 </div>
