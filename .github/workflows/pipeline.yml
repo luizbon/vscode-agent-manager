@@ -12,45 +12,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      semver: ${{ steps.versioning.outputs.semver }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Calculate and Update Version
-        id: versioning
-        run: |
-          BASE_VERSION=$(node -p "require('./package.json').version")
-          MAJOR=$(echo $BASE_VERSION | cut -d. -f1)
-          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
-          
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            # Pre-release path: Ensure minor is ODD
-            if [ $((MINOR % 2)) -eq 0 ]; then
-              MINOR=$((MINOR + 1))
-            fi
-          else
-            # Release path: Ensure minor is EVEN
-            if [ $((MINOR % 2)) -ne 0 ]; then
-              MINOR=$((MINOR + 1))
-            fi
-          fi
-          
-          VERSION="${MAJOR}.${MINOR}.${{ github.run_number }}"
-          echo "Calculated version: $VERSION"
-          npm version $VERSION --no-git-tag-version --allow-same-version
-          echo "semver=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Commit Updated Version
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore: bump version to ${{ steps.versioning.outputs.semver }} [skip ci]"
-          file_pattern: package.json package-lock.json
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -147,15 +113,21 @@ jobs:
 
       - name: Publish to VS Code Marketplace
         run: |
-          npm pkg delete scripts.vscode:prepublish
-          npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
-
-      - name: Push Git Tag
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git tag v${{ needs.build.outputs.semver }}
-          git push origin v${{ needs.build.outputs.semver }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm pkg delete scripts.vscode:prepublish || true
+          
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          
+          if [ $((MINOR % 2)) -ne 0 ]; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+          
+          npx @vscode/vsce publish $BUMP -p ${{ secrets.VSCE_PAT }}
+          git push origin HEAD:main --follow-tags
 
   prerelease:
     needs: [build, test]
@@ -165,6 +137,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
 
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
@@ -182,5 +157,18 @@ jobs:
 
       - name: Publish Pre-release to VS Code Marketplace
         run: |
-          npm pkg delete scripts.vscode:prepublish
-          npx @vscode/vsce publish --pre-release -p ${{ secrets.VSCE_PAT }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm pkg delete scripts.vscode:prepublish || true
+          
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          
+          if [ $((MINOR % 2)) -eq 0 ]; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+          
+          npx @vscode/vsce publish $BUMP --pre-release -p ${{ secrets.VSCE_PAT }}
+          git push origin HEAD:${{ github.head_ref }} --follow-tags
