@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { Agent } from './agentDiscovery';
 import { AgentParser } from './agentParser';
-import { GitService } from './gitService';
+import { GitService } from '../services/gitService';
 
 export interface IAgentSource {
     fetchAgents(sourceUrl: string, globalStorageUri: vscode.Uri): Promise<Agent[]>;

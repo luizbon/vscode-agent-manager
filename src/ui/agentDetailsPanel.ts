@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { TelemetryService } from './telemetry';
-import { Agent } from './agentDiscovery';
-import { AgentInstaller } from './agentInstaller';
+import { TelemetryService } from '../services/telemetry';
+import { Agent } from '../agent/agentDiscovery';
+import { AgentInstaller } from '../agent/agentInstaller';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';

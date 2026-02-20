@@ -1,80 +1,95 @@
-import * as vscode from 'vscode';
-import { Agent } from './agentDiscovery';
+import * as vscode from "vscode";
+import { Agent } from "../agent/agentDiscovery";
 
 export class AgentMarketplaceProvider implements vscode.WebviewViewProvider {
+  public static readonly viewType = "agentManagerMarketplace";
 
-    public static readonly viewType = 'agentManagerMarketplace';
+  private _view?: vscode.WebviewView;
+  private _agents: Agent[] = [];
 
-    private _view?: vscode.WebviewView;
-    private _agents: Agent[] = [];
+  constructor(private readonly _extensionUri: vscode.Uri) {}
 
-    constructor(
-        private readonly _extensionUri: vscode.Uri,
-    ) { }
+  public resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken,
+  ) {
+    this._view = webviewView;
 
-    public resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext,
-        _token: vscode.CancellationToken,
-    ) {
-        this._view = webviewView;
+    webviewView.webview.options = {
+      // Allow scripts in the webview
+      enableScripts: true,
 
-        webviewView.webview.options = {
-            // Allow scripts in the webview
-            enableScripts: true,
+      localResourceRoots: [this._extensionUri],
+    };
 
-            localResourceRoots: [
-                this._extensionUri
-            ]
-        };
+    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+    webviewView.webview.onDidReceiveMessage((data) => {
+      switch (data.type) {
+        case "installAgent":
+          vscode.commands.executeCommand("agentManager.install", data.agent);
+          break;
+        case "viewDetails":
+          vscode.commands.executeCommand(
+            "agentManager.openAgentDetails",
+            data.agent,
+            data.searchTerm,
+          );
+          break;
+        case "uninstallAgent":
+          vscode.commands.executeCommand("agentManager.uninstall", data.agent);
+          break;
+        case "search":
+          // Trigger search in extension? Or just filter locally?
+          // The user might want to re-fetch from repositories.
+          // For now, let's assume search filters the current list,
+          // but maybe we can trigger a re-fetch if it's a global search?
+          // The original "Refresh" button did a re-fetch.
+          vscode.commands.executeCommand("agentManager.search", data.force);
+          break;
+        case "viewDidLoad":
+          // Send cached agents immediately
+          if (this._agents.length > 0) {
+            this._view?.webview.postMessage({
+              type: "updateAgents",
+              agents: this._agents,
+              installedAgents: [],
+            }); // We need installedAgents here too...
+            // Re-trigger search (cached) to get installedAgents passed properly or update this method
+            vscode.commands.executeCommand("agentManager.search", false);
+          } else {
+            vscode.commands.executeCommand("agentManager.search", false);
+          }
+          break;
+      }
+    });
+  }
 
-        webviewView.webview.onDidReceiveMessage(data => {
-            switch (data.type) {
-                case 'installAgent':
-                    vscode.commands.executeCommand('agentManager.install', data.agent);
-                    break;
-                case 'viewDetails':
-                    vscode.commands.executeCommand('agentManager.openAgentDetails', data.agent, data.searchTerm);
-                    break;
-                case 'uninstallAgent':
-                    vscode.commands.executeCommand('agentManager.uninstall', data.agent);
-                    break;
-                case 'search':
-                    // Trigger search in extension? Or just filter locally?
-                    // The user might want to re-fetch from repositories.
-                    // For now, let's assume search filters the current list, 
-                    // but maybe we can trigger a re-fetch if it's a global search?
-                    // The original "Refresh" button did a re-fetch.
-                    vscode.commands.executeCommand('agentManager.search', data.force);
-                    break;
-                case 'viewDidLoad':
-                    // Send cached agents immediately
-                    if (this._agents.length > 0) {
-                        this._view?.webview.postMessage({ type: 'updateAgents', agents: this._agents, installedAgents: [] }); // We need installedAgents here too...
-                        // Re-trigger search (cached) to get installedAgents passed properly or update this method
-                        vscode.commands.executeCommand('agentManager.search', false);
-                    } else {
-                        vscode.commands.executeCommand('agentManager.search', false);
-                    }
-                    break;
-            }
-        });
+  public updateAgents(agents: Agent[], installedAgents: Agent[] = []) {
+    this._agents = agents;
+    if (this._view) {
+      this._view.webview.postMessage({
+        type: "updateAgents",
+        agents: agents,
+        installedAgents: installedAgents,
+      });
     }
+  }
 
-    public updateAgents(agents: Agent[], installedAgents: Agent[] = []) {
-        this._agents = agents;
-        if (this._view) {
-            this._view.webview.postMessage({ type: 'updateAgents', agents: agents, installedAgents: installedAgents });
-        }
-    }
+  private _getHtmlForWebview(webview: vscode.Webview) {
+    const codiconsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this._extensionUri,
+        "node_modules",
+        "@vscode/codicons",
+        "dist",
+        "codicon.css",
+      ),
+    );
+    const nonce = this.getNonce();
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
-        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
-        const nonce = this.getNonce();
-
-        return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 			<html lang="en">
 			<head>
 				<meta charset="UTF-8">
@@ -357,14 +372,15 @@ agents.forEach(agent => {
     </script>
     </body>
     </html>`;
-    }
+  }
 
-    private getNonce() {
-        let text = '';
-        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        for (let i = 0; i < 32; i++) {
-            text += possible.charAt(Math.floor(Math.random() * possible.length));
-        }
-        return text;
+  private getNonce() {
+    let text = "";
+    const possible =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    for (let i = 0; i < 32; i++) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
+    return text;
+  }
 }

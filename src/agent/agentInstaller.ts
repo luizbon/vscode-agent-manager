@@ -3,31 +3,99 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { Agent } from './agentDiscovery';
-import { GitService } from './gitService';
+import { GitService } from '../services/gitService';
 
 export class AgentInstaller {
     constructor(private context: vscode.ExtensionContext) { }
 
+    private getStateKey(installPath: string): string {
+        return `agentSha:${installPath}`;
+    }
+
+    private async getState(key: string, isGlobal: boolean): Promise<string | undefined> {
+        if (isGlobal) {
+            return this.context.globalState.get<string>(key);
+        } else {
+            return this.context.workspaceState.get<string>(key);
+        }
+    }
+
+    private async updateState(key: string, value: string, isGlobal: boolean): Promise<void> {
+        if (isGlobal) {
+            await this.context.globalState.update(key, value);
+        } else {
+            await this.context.workspaceState.update(key, value);
+        }
+    }
+
     public async installAgent(agent: Agent, targetPath?: string) {
         const installOptions: vscode.QuickPickItem[] = [];
+
+        const globalStoragePath = this.context.globalStorageUri.fsPath;
+        const userDir = path.dirname(path.dirname(globalStoragePath));
+        const userPath = path.join(userDir, 'prompts');
+
+        const isUserGlobal = (pathToCheck: string) => pathToCheck.startsWith(userPath);
+
+        const gitService = new GitService();
+        let repoRoot = '';
+        let currentSha = '';
+        let relativePath = '';
+        try {
+            repoRoot = await gitService.getRepoRoot(agent.installUrl);
+            currentSha = await gitService.getHeadSha(repoRoot);
+            relativePath = path.relative(repoRoot, agent.installUrl);
+        } catch (e) {
+            vscode.window.showErrorMessage(`Failed to determine git details for agent: ${e}`);
+            return;
+        }
 
         if (targetPath) {
             // Direct update/overwrite
             try {
-                const basePath = path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.base`);
+                const isGlobal = isUserGlobal(targetPath);
+                const stateKey = this.getStateKey(targetPath);
+                let baseSha = await this.getState(stateKey, isGlobal);
 
-                // Do we need to 3-way merge?
-                if (fs.existsSync(basePath) && fs.existsSync(targetPath)) {
+                const hasLocalFile = fs.existsSync(targetPath);
+
+                // Fallback for existing installations using legacy .base files
+                const legacyBasePath = path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.base`);
+                const hasLegacyBase = fs.existsSync(legacyBasePath);
+
+                if ((baseSha || hasLegacyBase) && hasLocalFile) {
                     const currentContent = await fs.promises.readFile(targetPath, 'utf-8');
-                    const baseContent = await fs.promises.readFile(basePath, 'utf-8');
+                    let baseContent = '';
+
+                    if (baseSha) {
+                        try {
+                            baseContent = await gitService.getFileContentAtSha(repoRoot, baseSha, relativePath);
+                        } catch (e) {
+                            baseContent = currentContent;
+                        }
+                    } else if (hasLegacyBase) {
+                        baseContent = await fs.promises.readFile(legacyBasePath, 'utf-8');
+                    }
+
+                    const newContent = await fs.promises.readFile(agent.installUrl, 'utf-8');
+
+                    // Temporary files for git merge-file which requires files on disk
+                    const baseTempPath = path.join(os.tmpdir(), `base_${Date.now()}_${path.basename(targetPath)}`);
+                    const newTempPath = path.join(os.tmpdir(), `new_${Date.now()}_${path.basename(targetPath)}`);
 
                     if (currentContent !== baseContent) {
                         // User modified the file locally
-                        const gitService = new GitService();
                         const targetBackup = targetPath + '.bak';
                         await fs.promises.copyFile(targetPath, targetBackup); // Backup user's work
 
-                        const success = await gitService.mergeUpdate(targetPath, basePath, agent.installUrl);
+                        await fs.promises.writeFile(baseTempPath, baseContent, 'utf-8');
+                        await fs.promises.writeFile(newTempPath, newContent, 'utf-8');
+
+                        const success = await gitService.mergeUpdate(targetPath, baseTempPath, newTempPath);
+
+                        await fs.promises.unlink(baseTempPath).catch(() => { });
+                        await fs.promises.unlink(newTempPath).catch(() => { });
+
                         if (!success) {
                             // File has conflict markers now
                             const doc = await vscode.workspace.openTextDocument(targetPath);
@@ -58,12 +126,17 @@ export class AgentInstaller {
                         await this.copyAgentFile(agent.installUrl, targetPath);
                     }
                 } else {
-                    // No base file or target missing, just overwrite
+                    // No base file state or target missing, just overwrite
                     await this.copyAgentFile(agent.installUrl, targetPath);
                 }
 
-                // Update the base file
-                await this.copyAgentFile(agent.installUrl, basePath);
+                // Update the state
+                await this.updateState(this.getStateKey(targetPath), currentSha, isUserGlobal(targetPath));
+
+                // Cleanup old base file if it exists
+                if (hasLegacyBase) {
+                    await fs.promises.unlink(legacyBasePath).catch(() => { });
+                }
 
                 vscode.window.showInformationMessage(`Agent ${agent.name} updated successfully at ${targetPath}`);
 
@@ -109,12 +182,6 @@ export class AgentInstaller {
         }
 
         // 2. User Profile option (derived from globalStorageUri)
-        // context.globalStorageUri points to .../User/globalStorage/publisher.extension
-        // We want .../User/prompts
-        const globalStoragePath = this.context.globalStorageUri.fsPath;
-        const userDir = path.dirname(path.dirname(globalStoragePath));
-        const userPath = path.join(userDir, 'prompts');
-
         installOptions.push({
             label: 'Install to User Profile (prompts)',
             description: userPath,
@@ -141,8 +208,7 @@ export class AgentInstaller {
 
         try {
             await this.copyAgentFile(agent.installUrl, installPath);
-            const basePath = path.join(path.dirname(installPath), `.${path.basename(installPath)}.base`);
-            await this.copyAgentFile(agent.installUrl, basePath);
+            await this.updateState(this.getStateKey(installPath), currentSha, isUserGlobal(installPath));
 
             vscode.window.showInformationMessage(`Agent ${agent.name} installed successfully to ${installPath}`);
 

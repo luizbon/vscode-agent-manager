@@ -124,6 +124,92 @@ export class GitService {
         }
     }
 
+    public async getHeadSha(repoDir: string): Promise<string> {
+        try {
+            if (!this.useFallback) {
+                const stdout = await this.execCommand(`git rev-parse HEAD`, repoDir);
+                return stdout.trim();
+            } else {
+                return await this.getHeadShaFallback(repoDir);
+            }
+        } catch (error) {
+            console.warn(`Native git rev-parse HEAD failed in ${repoDir}. Falling back to simple-git. Error: ${error}`);
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getHeadSha', repoDir });
+            this.useFallback = true;
+            return await this.getHeadShaFallback(repoDir);
+        }
+    }
+
+    private async getHeadShaFallback(repoDir: string): Promise<string> {
+        try {
+            const git: SimpleGit = simpleGit(repoDir);
+            const sha = await git.revparse(['HEAD']);
+            return sha.trim();
+        } catch (error) {
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getHeadShaFallback', repoDir });
+            throw error;
+        }
+    }
+
+    public async getFileContentAtSha(repoDir: string, sha: string, relativePath: string): Promise<string> {
+        try {
+            // git show <sha>:<relativePath>
+            if (!this.useFallback) {
+                // Ensure correct relative path separators for git command
+                const gitPath = relativePath.replace(/\\/g, '/');
+                const stdout = await this.execCommand(`git show ${sha}:"${gitPath}"`, repoDir);
+                return stdout;
+            } else {
+                return await this.getFileContentAtShaFallback(repoDir, sha, relativePath);
+            }
+        } catch (error) {
+            console.warn(`Native git show failed in ${repoDir} for ${sha}:${relativePath}. Falling back to simple-git. Error: ${error}`);
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getFileContentAtSha', repoDir, sha, relativePath });
+            this.useFallback = true;
+            return await this.getFileContentAtShaFallback(repoDir, sha, relativePath);
+        }
+    }
+
+    private async getFileContentAtShaFallback(repoDir: string, sha: string, relativePath: string): Promise<string> {
+        try {
+            const git: SimpleGit = simpleGit(repoDir);
+            const gitPath = relativePath.replace(/\\/g, '/');
+            const content = await git.show([`${sha}:${gitPath}`]);
+            return content;
+        } catch (error) {
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getFileContentAtShaFallback', repoDir, sha, relativePath });
+            throw error;
+        }
+    }
+
+    public async getRepoRoot(filePath: string): Promise<string> {
+        const dir = path.dirname(filePath);
+        try {
+            if (!this.useFallback) {
+                const stdout = await this.execCommand(`git rev-parse --show-toplevel`, dir);
+                return stdout.trim();
+            } else {
+                return await this.getRepoRootFallback(dir);
+            }
+        } catch (error) {
+            console.warn(`Native git rev-parse --show-toplevel failed in ${dir}. Falling back to simple-git. Error: ${error}`);
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getRepoRoot', dir });
+            this.useFallback = true;
+            return await this.getRepoRootFallback(dir);
+        }
+    }
+
+    private async getRepoRootFallback(dir: string): Promise<string> {
+        try {
+            const git: SimpleGit = simpleGit(dir);
+            const root = await git.revparse(['--show-toplevel']);
+            return root.trim();
+        } catch (error) {
+            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getRepoRootFallback', dir });
+            throw error;
+        }
+    }
+
     private execCommand(command: string, cwd?: string): Promise<string> {
         return new Promise((resolve, reject) => {
             exec(command, { cwd }, (error, stdout, stderr) => {
