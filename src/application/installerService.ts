@@ -134,12 +134,14 @@ export class InstallerService {
             if (item.baseDirectory.includes('/') || item.baseDirectory.includes('\\')) {
                 console.warn(`Warning: item.baseDirectory "${item.baseDirectory}" contains path separators. This might indicate an unexpected structure. It will be normalized.`);
             }
-            // Re-normalize to ensure no absolute paths or parent traversal
+            // Use upath to sanitise baseDirectory (strip traversal, normalise slashes),
+            // then build the actual filesystem path with the native path module so
+            // the result uses the correct separator on every OS (e.g. backslash on Windows).
             const safeBaseDir = upath.toUnix(item.baseDirectory).split('/').filter((p: string) => p && p !== '..').join('/');
-            finalInstallPath = upath.join(installBasePath, safeBaseDir);
+            finalInstallPath = path.join(installBasePath, safeBaseDir);
         }
 
-        const fullTargetPath = upath.join(finalInstallPath, fileName);
+        const fullTargetPath = path.join(finalInstallPath, fileName);
 
         await this.copyItemFile(item.installUrl, fullTargetPath);
         await this.stateStore.update(this.getStateKey(fullTargetPath), currentSha, this.isUserGlobalFn(fullTargetPath));
