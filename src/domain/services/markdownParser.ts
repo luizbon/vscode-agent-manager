@@ -1,9 +1,17 @@
 import * as path from 'path';
 import * as yaml from 'js-yaml';
-import { Agent } from './agentDiscovery';
 
-export class AgentParser {
-    public static parse(content: string, repo: string, filePath: string): Agent | null {
+export interface ParsedMetadata {
+    name: string;
+    description: string;
+    version?: string;
+    author?: string;
+    tags: string[];
+    [key: string]: any;
+}
+
+export class MarkdownParser {
+    public static extractMetadata(content: string, filePath: string): ParsedMetadata {
         // Parse frontmatter using js-yaml
         const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
         const match = content.match(frontmatterRegex);
@@ -31,7 +39,10 @@ export class AgentParser {
 
         if (!metadata.name) {
             // infer from filename
-            metadata.name = path.basename(filePath, '.agent.md');
+            // Assume the extension handles both .agent.md and .skill.md or just .md
+            const baseName = path.basename(filePath);
+            const nameMatch = baseName.match(/^(.*?)(?:\.agent|\.skill)?\.md$/);
+            metadata.name = nameMatch ? nameMatch[1] : baseName;
         }
 
         // Clean up name
@@ -49,14 +60,12 @@ export class AgentParser {
         }
 
         return {
+            ...metadata,
             name: name,
             description: metadata.description?.toString() || 'No description provided.',
             version: metadata.version?.toString(),
             author: metadata.author?.toString(),
             tags: tags,
-            repository: repo,
-            path: filePath,
-            installUrl: filePath
         };
     }
 }
