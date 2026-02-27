@@ -1,21 +1,20 @@
 import * as vscode from 'vscode';
-import { TelemetryService } from '../services/telemetry';
-import { Agent } from '../agent/agentDiscovery';
-import { AgentInstaller } from '../agent/agentInstaller';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as upath from 'upath';
 import { execFile } from 'child_process';
+import { TelemetryService } from '../../services/telemetry';
+import { IMarketplaceItem } from '../../domain/models/marketplaceItem';
 
-export class AgentDetailsPanel {
-    // ...
+export class DetailsPanel {
     private fetchUrl(url: string): Promise<string> {
         return fs.promises.readFile(url, 'utf-8');
     }
 
-    private async fetchLastUpdated(agent: Agent) {
+    private async fetchLastUpdated(item: IMarketplaceItem) {
         try {
-            const filePath = agent.installUrl;
+            const filePath = item.installUrl;
             if (!fs.existsSync(filePath)) { return; }
 
             const dir = path.dirname(filePath);
@@ -36,32 +35,30 @@ export class AgentDetailsPanel {
             });
         } catch (e) {
             console.error('Error fetching commit date:', e);
-            TelemetryService.getInstance().sendError(e as Error, { context: 'fetchLastUpdated', agent: agent.name });
+            TelemetryService.getInstance().sendError(e as Error, { context: 'fetchLastUpdated', item: item.name });
         }
     }
-    public static currentPanel: AgentDetailsPanel | undefined;
+
+    public static currentPanel: DetailsPanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
-    private _agent: Agent;
+    private _item: IMarketplaceItem;
 
-    public static createOrShow(context: vscode.ExtensionContext, agent: Agent, searchTerm?: string) {
-        console.log('AgentDetailsPanel.createOrShow called for:', agent.name);
+    public static createOrShow(context: vscode.ExtensionContext, item: IMarketplaceItem, searchTerm?: string) {
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
             : undefined;
 
-        // If we already have a panel, show it.
-        if (AgentDetailsPanel.currentPanel) {
-            AgentDetailsPanel.currentPanel._panel.reveal(column);
-            AgentDetailsPanel.currentPanel.update(agent, searchTerm);
+        if (DetailsPanel.currentPanel) {
+            DetailsPanel.currentPanel._panel.reveal(column);
+            DetailsPanel.currentPanel.update(item, searchTerm);
             return;
         }
 
-        // Otherwise, create a new panel.
         const panel = vscode.window.createWebviewPanel(
-            'agentDetails',
-            agent.name,
+            'marketplaceDetails',
+            item.name,
             column || vscode.ViewColumn.One,
             {
                 enableScripts: true,
@@ -69,38 +66,32 @@ export class AgentDetailsPanel {
             }
         );
 
-        AgentDetailsPanel.currentPanel = new AgentDetailsPanel(panel, context, agent, searchTerm);
+        DetailsPanel.currentPanel = new DetailsPanel(panel, context, item, searchTerm);
     }
 
-    private constructor(panel: vscode.WebviewPanel, private context: vscode.ExtensionContext, agent: Agent, searchTerm?: string) {
+    private constructor(panel: vscode.WebviewPanel, private context: vscode.ExtensionContext, item: IMarketplaceItem, searchTerm?: string) {
         this._panel = panel;
         this._extensionUri = context.extensionUri;
-        this._agent = agent;
+        this._item = item;
 
-        // Set the webview's initial html content
-        this.update(agent, searchTerm);
+        this.update(item, searchTerm);
 
-        // Listen for when the panel is disposed
-        // This happens when the user closes the panel or when the panel is closed programmatically
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
-        // Handle messages from the webview
         this._panel.webview.onDidReceiveMessage(
             async message => {
                 switch (message.command) {
                     case 'install':
-                        vscode.commands.executeCommand('agentManager.install', { agent: this._agent });
+                        vscode.commands.executeCommand('marketplace.install', this._item);
                         return;
                     case 'viewDidLoad':
-                        // Webview reported it is ready (reloaded or first load)
-                        this.fetchLastUpdated(this._agent);
-                        this.checkInstallationStatus(this._agent);
-                        // Fetch content
+                        this.fetchLastUpdated(this._item);
+                        this.checkInstallationStatus(this._item);
                         try {
-                            const content = await this.fetchUrl(this._agent.installUrl);
+                            const content = await this.fetchUrl(this._item.installUrl);
                             this._panel.webview.postMessage({ command: 'updateContent', content });
                         } catch (e) {
-                            TelemetryService.getInstance().sendError(e as Error, { context: 'fetchContent', agent: this._agent.name });
+                            TelemetryService.getInstance().sendError(e as Error, { context: 'fetchContent', item: this._item.name });
                             this._panel.webview.postMessage({ command: 'updateContent', content: 'Failed to load content: ' + e });
                         }
                         return;
@@ -109,17 +100,14 @@ export class AgentDetailsPanel {
                         if (!localPath) { return; }
 
                         try {
-                            const agent = this._agent;
-                            TelemetryService.getInstance().sendEvent('diff.show', { agent: agent.name });
-                            const remoteContent = await this.fetchUrl(agent.installUrl);
+                            const item = this._item;
+                            TelemetryService.getInstance().sendEvent('diff.show', { item: item.name });
+                            const remoteContent = await this.fetchUrl(item.installUrl);
 
-                            // Create a temporary file or virtual document for remote content
-                            const remoteUri = vscode.Uri.parse(`untitled:${agent.name}_remote.md`);
+                            const remoteUri = vscode.Uri.parse(`untitled:${item.name}_remote.md`);
                             const doc = await vscode.workspace.openTextDocument(remoteUri);
 
-                            // Clear and set content using WorkspaceEdit
                             const edit = new vscode.WorkspaceEdit();
-                            // If doc has content, replace it. 
                             const fullRange = new vscode.Range(
                                 doc.lineAt(0).range.start,
                                 doc.lineAt(doc.lineCount - 1).range.end
@@ -127,22 +115,19 @@ export class AgentDetailsPanel {
                             edit.replace(remoteUri, fullRange, remoteContent);
                             await vscode.workspace.applyEdit(edit);
 
-                            // If the document was empty (newly created), applyEdit might not replace anything if range is empty?
-                            // Actually untitled docs start empty. So we can just insert.
                             if (doc.getText() === '') {
                                 const insertEdit = new vscode.WorkspaceEdit();
                                 insertEdit.insert(remoteUri, new vscode.Position(0, 0), remoteContent);
                                 await vscode.workspace.applyEdit(insertEdit);
                             }
 
-                            // Open Diff
                             await vscode.commands.executeCommand('vscode.diff',
                                 vscode.Uri.file(localPath),
                                 remoteUri,
-                                `${agent.name} (Local) ↔ (Remote)`
+                                `${item.name} (Local) ↔ (Remote)`
                             );
                         } catch (error) {
-                            TelemetryService.getInstance().sendError(error as Error, { context: 'showDiff', agent: this._agent.name });
+                            TelemetryService.getInstance().sendError(error as Error, { context: 'showDiff', item: this._item.name });
                             vscode.window.showErrorMessage(`Failed to open diff: ${error}`);
                         }
                         return;
@@ -153,22 +138,32 @@ export class AgentDetailsPanel {
         );
     }
 
-    public update(agent: Agent, searchTerm?: string) {
-        this._agent = agent;
-        this._panel.title = agent.name;
-        this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, agent, searchTerm);
-        this.fetchLastUpdated(agent);
-        this.checkInstallationStatus(agent);
+    public update(item: IMarketplaceItem, searchTerm?: string) {
+        this._item = item;
+        this._panel.title = item.name;
+        this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, item, searchTerm);
+        this.fetchLastUpdated(item);
+        this.checkInstallationStatus(item);
     }
 
-    private async checkInstallationStatus(agent: Agent) {
+    private async checkInstallationStatus(item: IMarketplaceItem) {
         let localPath: string | undefined;
 
-        // Check workspace with prioritized locations from chat.agentFilesLocations
+        const getTargetPath = (basePath: string) => {
+            let finalDir = basePath;
+            if (item.baseDirectory) {
+                const safeBaseDir = upath.toUnix(item.baseDirectory).split('/').filter((p: string) => p && p !== '..').join('/');
+                finalDir = path.join(basePath, safeBaseDir);
+            }
+            return path.join(finalDir, path.basename(item.path));
+        };
+
         if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
             const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
             const config = vscode.workspace.getConfiguration('chat');
-            const configLocations = config.get<string[]>('agentFilesLocations');
+            const settingName = item.type === 'agent' ? 'agentFilesLocations' : 'agentSkillsLocations';
+            const configLocations = config.get<string[]>(settingName);
+
             const locations: string[] = [];
             if (Array.isArray(configLocations)) {
                 for (let i = 0; i < configLocations.length; i++) {
@@ -176,39 +171,38 @@ export class AgentDetailsPanel {
                 }
             }
 
-            // Add default location to the check list if not explicitly present (though priority implies explicit config first)
-            // But let's check config first, then default.
             const pathsToCheck = [...locations];
-            if (!pathsToCheck.includes('.github/agents')) {
-                pathsToCheck.push('.github/agents');
+            const defaultLoc = item.type === 'agent' ? '.github/agents' : '.github/skills';
+            if (!pathsToCheck.includes(defaultLoc)) {
+                pathsToCheck.push(defaultLoc);
             }
 
             for (const loc of pathsToCheck) {
-                const fileName = path.basename(agent.path); // Use original filename
-                const fullPath = path.isAbsolute(loc) ? path.join(loc, fileName) : path.join(workspaceRoot, loc, fileName);
+                const basePath = path.isAbsolute(loc) ? loc : path.join(workspaceRoot, loc);
+                const fullPath = getTargetPath(basePath);
 
                 if (fs.existsSync(fullPath)) {
                     localPath = fullPath;
-                    break; // Found it
+                    break;
                 }
-
-                // Fallback check with agent name just in case (though we should avoid this)
-                // const fallbackPath = ...
             }
         }
 
-        // Check global if not in workspace
         if (!localPath) {
-            // Check User/prompts
-            const globalStoragePath = this.context.globalStorageUri.fsPath;
-            // globalStorageUri points to .../User/globalStorage/publisher.extension
-            // We want .../User/prompts
-            const userDir = path.dirname(path.dirname(globalStoragePath));
-            const fileName = path.basename(agent.path);
-            const p = path.join(userDir, 'prompts', fileName);
-
-            if (fs.existsSync(p)) {
-                localPath = p;
+            if (item.type === 'agent') {
+                const globalStoragePath = this.context.globalStorageUri.fsPath;
+                const userDir = path.dirname(path.dirname(globalStoragePath));
+                const basePath = path.join(userDir, 'prompts');
+                const p = getTargetPath(basePath);
+                if (fs.existsSync(p)) {
+                    localPath = p;
+                }
+            } else {
+                const globalSkillPath = path.join(os.homedir(), '.copilot', 'skills');
+                const p = getTargetPath(globalSkillPath);
+                if (fs.existsSync(p)) {
+                    localPath = p;
+                }
             }
         }
 
@@ -219,7 +213,7 @@ export class AgentDetailsPanel {
 
         try {
             const localContent = fs.readFileSync(localPath, 'utf8');
-            const remoteContent = await this.fetchUrl(agent.installUrl);
+            const remoteContent = await this.fetchUrl(item.installUrl);
 
             if (localContent === remoteContent) {
                 this._panel.webview.postMessage({ command: 'updateStatus', status: 'installed', localPath });
@@ -228,18 +222,13 @@ export class AgentDetailsPanel {
             }
         } catch (e) {
             console.error('Failed to compare installation status', e);
-            TelemetryService.getInstance().sendError(e as Error, { context: 'checkInstallationStatus', agent: agent.name });
+            TelemetryService.getInstance().sendError(e as Error, { context: 'checkInstallationStatus', item: item.name });
         }
     }
 
-
-
     public dispose() {
-        AgentDetailsPanel.currentPanel = undefined;
-
-        // Clean up our resources
+        DetailsPanel.currentPanel = undefined;
         this._panel.dispose();
-
         while (this._disposables.length) {
             const x = this._disposables.pop();
             if (x) {
@@ -258,14 +247,11 @@ export class AgentDetailsPanel {
             .replace(/'/g, "&#039;");
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview, agent: Agent, searchTerm?: string) {
-        // Use a Content Security Policy
-        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'main.js'));
-        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'style.css')); // We can create this later if needed
+    private _getHtmlForWebview(webview: vscode.Webview, item: IMarketplaceItem, searchTerm?: string) {
         const nonce = this.getNonce();
-
-        const safeName = this.escapeHtml(agent.name);
-        const safeRepo = this.escapeHtml(agent.repository);
+        const safeName = this.escapeHtml(item.name);
+        const safeRepo = this.escapeHtml(item.repository);
+        const itemType = item.type === 'agent' ? 'Agent' : 'Skill';
 
         return `<!DOCTYPE html>
             <html lang="en">
@@ -276,7 +262,10 @@ export class AgentDetailsPanel {
                 <title>${safeName}</title>
                 <style>
                     body { font-family: var(--vscode-font-family); padding: 20px; color: var(--vscode-editor-foreground); }
-                    h1 { font-size: 1.5em; margin-bottom: 0.5em; }
+                    h1 { font-size: 1.5em; margin-bottom: 0.5em; display: flex; align-items: center; gap: 10px; }
+                    .badge { font-size: 0.6em; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; font-weight: bold; }
+                    .badge-agent { background-color: #007acc; color: white; }
+                    .badge-skill { background-color: #2ea043; color: white; }
                     .meta { margin-bottom: 20px; color: var(--vscode-descriptionForeground); }
                     .actions { margin-bottom: 20px; }
                     button { 
@@ -298,7 +287,10 @@ export class AgentDetailsPanel {
                 </style>
             </head>
             <body>
-                <h1>${safeName}</h1>
+                <h1>
+                    <span class="badge ${item.type === 'agent' ? 'badge-agent' : 'badge-skill'}">${itemType}</span>
+                    ${safeName}
+                </h1>
                 <div class="meta">
                     <p><strong>Repository:</strong> <a href="${safeRepo}">${safeRepo}</a></p>
                     <p id="last-updated"><strong>Last Updated:</strong> Loading...</p>
@@ -306,8 +298,8 @@ export class AgentDetailsPanel {
                 </div>
                 
                 <div class="actions">
-                    <button id="install-btn" style="display:none;">Install Agent</button>
-                    <button id="update-btn" style="display:none;">Update Agent</button>
+                    <button id="install-btn" style="display:none;">Install ${itemType}</button>
+                    <button id="update-btn" style="display:none;">Update ${itemType}</button>
                     <button id="diff-btn" style="display:none; margin-left: 10px;">Show Changes</button>
                     <span id="installed-msg" style="display:none; color: var(--vscode-notebookStatusSuccessIcon-foreground);">✔ Installed (Up to date)</span>
                 </div>
@@ -322,9 +314,7 @@ export class AgentDetailsPanel {
                     let currentLocalPath = '';
                     const searchTerm = "${searchTerm || ''}";
                     
-                    function install() {
-                        vscode.postMessage({ command: 'install' });
-                    }
+                    function install() { vscode.postMessage({ command: 'install' }); }
 
                     function showDiff() {
                         if (currentLocalPath) {
@@ -380,7 +370,6 @@ export class AgentDetailsPanel {
                             case 'updateContent':
                                     const contentDiv = document.getElementById('content');
                                     if (contentDiv) {
-                                        // Simple HTML escaping
                                         let text = message.content;
                                         let safeText = text.replace(/&/g, "&amp;")
                                             .replace(/</g, "&lt;")
@@ -399,7 +388,8 @@ export class AgentDetailsPanel {
                         });
     
                         function escapeRegExp(string) {
-                            return string.replace(/[.*+?^!:"{}()|[\\]\\\\]/g, '\\\\$&'); // $& means the whole matched string
+                            const pattern = '[.*+?^$' + '{}()|[\\\\\\]\\\\\\\\]';
+                            return string.replace(new RegExp(pattern, 'g'), '\\\\$&');
                         }
     
                         function highlightText(text, term) {
@@ -408,7 +398,6 @@ export class AgentDetailsPanel {
                              return text.replace(regex, '<mark>$1</mark>');
                         }
 
-                    // Notify extension that the view has loaded
                     vscode.postMessage({ command: 'viewDidLoad' });
                 </script>
             </body>

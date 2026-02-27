@@ -2,40 +2,52 @@ import "source-map-support/register";
 import * as vscode from "vscode";
 import * as os from "os";
 import * as querystring from "querystring";
-import { AgentDiscovery, Agent } from "./agent/agentDiscovery";
-import { AgentProvider } from "./agent/agentProvider";
-import { AgentInstaller } from "./agent/agentInstaller";
-import { AgentDetailsPanel } from "./ui/agentDetailsPanel";
-import { AgentMarketplaceProvider } from "./ui/agentMarketplace";
+import * as path from 'path';
+import * as fs from 'fs';
+
+// Domain
+import { IMarketplaceItem } from './domain/models/marketplaceItem';
+
+// Application
+import { MarketplaceService } from './application/marketplaceService';
+import { InstallerService, IStateStore, IConflictResolver } from './application/installerService';
+
+// Infrastructure
+import { GitSource } from './infrastructure/sources/gitSource';
+import { LocalWorkspaceStorage } from './infrastructure/storage/localWorkspaceStorage';
+import { GlobalStorage } from './infrastructure/storage/globalStorage';
+
+// Presentation (UI)
+import { MarketplaceTreeProvider } from './ui/providers/marketplaceTreeProvider';
+import { MarketplaceWebviewProvider } from './ui/views/marketplaceWebview';
+import { DetailsPanel } from './ui/panels/detailsPanel';
+
+// Services
 import { TelemetryService } from "./services/telemetry";
 
-function extractAgent(item: any): Agent | undefined {
+function extractItem(item: any): IMarketplaceItem | undefined {
   if (!item) {
     return undefined;
   }
-  if (item.agent && item.agent.name) {
-    return item.agent as Agent;
+  if (item.item && item.item.name) {
+    return item.item as IMarketplaceItem;
   }
   if (item.name && item.repository) {
-    return item as Agent;
+    return item as IMarketplaceItem;
   }
   if (item.arguments && item.arguments[0] && item.arguments[0].name) {
-    return item.arguments[0] as Agent;
+    return item.arguments[0] as IMarketplaceItem;
   }
   return undefined;
 }
+
 export function activate(context: vscode.ExtensionContext) {
-  console.log(
-    'Congratulations, your extension "vscode-agent-manager" is now active!',
-  );
+  console.log('Congratulations, your extension "vscode-agent-manager" is now active!');
 
   const telemetry = TelemetryService.getInstance();
   context.subscriptions.push(telemetry);
 
-  // Check if we have asked about telemetry
-  const hasAskedTelemetry = context.globalState.get<boolean>(
-    "agentManager.hasAskedTelemetry",
-  );
+  const hasAskedTelemetry = context.globalState.get<boolean>("agentManager.hasAskedTelemetry");
   if (!hasAskedTelemetry) {
     const enableTelemetry = "Enable Telemetry";
     const disableTelemetry = "Disable Telemetry";
@@ -47,17 +59,9 @@ export function activate(context: vscode.ExtensionContext) {
       )
       .then((selection) => {
         if (selection === enableTelemetry) {
-          vscode.workspace
-            .getConfiguration("agentManager")
-            .update("enableTelemetry", true, vscode.ConfigurationTarget.Global);
+          vscode.workspace.getConfiguration("agentManager").update("enableTelemetry", true, vscode.ConfigurationTarget.Global);
         } else if (selection === disableTelemetry) {
-          vscode.workspace
-            .getConfiguration("agentManager")
-            .update(
-              "enableTelemetry",
-              false,
-              vscode.ConfigurationTarget.Global,
-            );
+          vscode.workspace.getConfiguration("agentManager").update("enableTelemetry", false, vscode.ConfigurationTarget.Global);
         }
         context.globalState.update("agentManager.hasAskedTelemetry", true);
       });
@@ -65,361 +69,377 @@ export function activate(context: vscode.ExtensionContext) {
 
   telemetry.sendEvent("activate");
 
-  const agentDiscovery = new AgentDiscovery(context.globalStorageUri);
-  const agentProvider = new AgentProvider(context);
-  const marketplaceProvider = new AgentMarketplaceProvider(
-    context.extensionUri,
-  );
+  const globalStoragePath = context.globalStorageUri.fsPath;
+
+  // Dependency Injection setup
+  const gitSource = new GitSource();
+  const globalStorage = new GlobalStorage(globalStoragePath);
+
+  const marketplaceService = new MarketplaceService(globalStoragePath);
+
+  const stateStore: IStateStore = {
+    get: async (key: string, isGlobal: boolean) => {
+      return isGlobal ? context.globalState.get<string>(key) : context.workspaceState.get<string>(key);
+    },
+    update: async (key: string, value: string, isGlobal: boolean) => {
+      if (isGlobal) { await context.globalState.update(key, value); }
+      else { await context.workspaceState.update(key, value); }
+    }
+  };
+
+  const conflictResolver: IConflictResolver = {
+    resolve: async (item: IMarketplaceItem, targetPath: string) => {
+      const doc = await vscode.workspace.openTextDocument(targetPath);
+      await vscode.window.showTextDocument(doc);
+
+      const choice = await vscode.window.showWarningMessage(
+        `Conflicts found while updating ${item.name}. Please review the conflict markers in the file.`,
+        { modal: true },
+        'Override', 'Keep Merged / Fix Manually', 'Cancel'
+      );
+
+      if (choice === 'Cancel') { return 'cancel'; }
+      if (choice === 'Override') { return 'override'; }
+      return 'manual';
+    }
+  };
+
+  const userDir = path.dirname(path.dirname(globalStoragePath));
+  const userPath = path.join(userDir, 'prompts');
+  const globalSkillPath = path.join(os.homedir(), '.copilot', 'skills');
+
+  const isUserPath = (p: string) => p.startsWith(userPath) || p.startsWith(globalSkillPath);
+  const installerService = new InstallerService(stateStore, conflictResolver, isUserPath);
+
+  const treeProvider = new MarketplaceTreeProvider(context);
+  const webviewProvider = new MarketplaceWebviewProvider(context.extensionUri);
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      AgentMarketplaceProvider.viewType,
-      marketplaceProvider,
-    ),
+    vscode.window.registerWebviewViewProvider(MarketplaceWebviewProvider.viewType, webviewProvider)
   );
 
-  const treeView = vscode.window.createTreeView("agentManagerAgents", {
-    treeDataProvider: agentProvider,
-  });
+  const treeView = vscode.window.createTreeView("agentManagerAgents", { treeDataProvider: treeProvider });
+
+  const refreshInstalledItems = async () => {
+    const local = await LocalWorkspaceStorage.getInstalledItems();
+    const global = globalStorage.getInstalledItems();
+
+    const combinedAgents = [...local.agents, ...global.agents];
+    const combinedSkills = [...local.skills, ...global.skills];
+
+    treeProvider.setInstalledItems(combinedAgents, combinedSkills);
+  };
 
   let searchDisposable = vscode.commands.registerCommand(
-    "agentManager.search",
+    "marketplace.search",
     async (force: boolean = false) => {
-      // Don't clear immediately to allow cache to be shown
-      // agentProvider.clear();
-      treeView.message = "Refreshing agents...";
+      treeView.message = "Refreshing items...";
       telemetry.sendEvent("search.start", { force: force.toString() });
 
       const config = vscode.workspace.getConfiguration("agentManager");
       const repositories = config.get<string[]>("repositories") || [];
 
-      // Prune removed repositories from view
-      agentProvider.prune(repositories);
-
-      // Refresh installed agents
-      await agentProvider.refreshInstalledAgents();
+      treeProvider.prune(repositories);
+      await refreshInstalledItems();
 
       if (repositories.length === 0) {
-        vscode.window.showWarningMessage("No agent repositories configured.");
+        vscode.window.showWarningMessage("No repositories configured.");
         treeView.message = "No repositories configured.";
-        agentProvider.clear(); // Clear all if no repos
-        marketplaceProvider.updateAgents([]);
+        treeProvider.clear();
+        webviewProvider.updateItems({ agents: [], skills: [] });
         return;
       }
 
-      // Check if we need to fetch anything
-      let reposToFetch: string[] = [];
-      if (force) {
-        reposToFetch = repositories;
-      } else {
-        reposToFetch = repositories.filter(
-          (repo) => !agentProvider.isCacheValid(repo),
-        );
-      }
+      let reposToFetch = force ? repositories : repositories.filter(repo => !treeProvider.isCacheValid(repo));
 
-      // If no fetch needed, just update view from cache
       if (reposToFetch.length === 0) {
-        const allCached = agentProvider.getAllCachedAgents();
-        marketplaceProvider.updateAgents(
-          allCached,
-          agentProvider.getInstalledAgents(),
-        );
+        const allCached = treeProvider.getAllCachedItems();
+        webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
         treeView.message = undefined;
         return;
       }
 
-      // We run this in "background" progress but we can update the tree immediately
       await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: "Searching for agents...",
-          cancellable: false,
-        },
-        async (progress, token) => {
-          let totalAgents = 0;
-          // Start with what we have in cache
-          let allFoundAgents: Agent[] = agentProvider.getAllCachedAgents();
-
+        { location: vscode.ProgressLocation.Notification, title: "Searching for items...", cancellable: false },
+        async (progress) => {
+          let totalItems = 0;
           for (const repo of reposToFetch) {
             progress.report({ message: `Fetching from ${repo}...` });
             try {
-              const agents = await agentDiscovery.fetchAgentsFromRepo(repo);
-              if (agents.length > 0) {
-                agentProvider.addAgents(repo, agents);
-                // Update our local list (addAgents updates the provider's map)
+              const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource);
+              if (fetched.agents.length > 0 || fetched.skills.length > 0) {
+                treeProvider.addItems(repo, fetched.agents, fetched.skills);
               }
             } catch (error) {
               console.error(`Error searching ${repo}:`, error);
               telemetry.sendError(error as Error, { context: "search", repo });
-              // Use cached if available?
             }
           }
 
-          // Re-get all agents from provider as source of truth
-          allFoundAgents = agentProvider.getAllCachedAgents();
-          totalAgents = allFoundAgents.length;
+          const allCached = treeProvider.getAllCachedItems();
+          totalItems = allCached.agents.length + allCached.skills.length;
 
-          // Pass BOTH found agents and currently installed agents to the marketplace to update UI state
-          marketplaceProvider.updateAgents(
-            allFoundAgents,
-            agentProvider.getInstalledAgents(),
-          );
+          webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
 
-          if (totalAgents === 0) {
-            if (repositories.length > 0 && agentProvider.isEmpty) {
-              treeView.message = "No agents found.";
-            } else {
-              treeView.message = undefined;
-            }
+          if (totalItems === 0 && repositories.length > 0 && treeProvider.isEmpty) {
+            treeView.message = "No items found.";
           } else {
             treeView.message = undefined;
           }
 
-          // vscode.window.showInformationMessage(`Found ${totalAgents} agents.`);
-          telemetry.sendEvent("search.complete", {
-            agentCount: totalAgents.toString(),
-          });
-        },
+          telemetry.sendEvent("search.complete", { itemCount: totalItems.toString() });
+        }
       );
-    },
+    }
   );
 
   let refreshSourceDisposable = vscode.commands.registerCommand(
-    "agentManager.refreshSource",
-    async (item: any) => {
-      if (item && item.repoUrl) {
-        const repo = item.repoUrl;
+    "marketplace.refreshSource",
+    async (uiItem: any) => {
+      if (uiItem && uiItem.repoUrl) {
+        const repo = uiItem.repoUrl;
         await vscode.window.withProgress(
-          {
-            location: vscode.ProgressLocation.Notification,
-            title: `Refreshing ${item.label}...`,
-            cancellable: false,
-          },
+          { location: vscode.ProgressLocation.Notification, title: `Refreshing ${uiItem.label}...`, cancellable: false },
           async () => {
             try {
-              const agents = await agentDiscovery.fetchAgentsFromRepo(repo);
-              if (agents.length > 0) {
-                agentProvider.addAgents(repo, agents);
-                const allCached = agentProvider.getAllCachedAgents();
-                marketplaceProvider.updateAgents(
-                  allCached,
-                  agentProvider.getInstalledAgents(),
-                );
-                telemetry.sendEvent("refreshSource.success", { repo });
-              }
+              const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource);
+              treeProvider.addItems(repo, fetched.agents, fetched.skills);
+              webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
+              telemetry.sendEvent("refreshSource.success", { repo });
             } catch (error) {
-              telemetry.sendError(error as Error, {
-                context: "refreshSource",
-                repo,
-              });
-              vscode.window.showErrorMessage(
-                `Failed to refresh ${item.label}: ${error}`,
-              );
+              telemetry.sendError(error as Error, { context: "refreshSource", repo });
+              vscode.window.showErrorMessage(`Failed to refresh ${uiItem.label}: ${error}`);
             }
-          },
+          }
         );
       }
-    },
+    }
   );
 
-  // ... existing commands ...
-
   let installDisposable = vscode.commands.registerCommand(
-    "agentManager.install",
-    async (item: any) => {
-      const agent = extractAgent(item);
-
-      if (agent) {
+    "marketplace.install",
+    async (uiItem: any) => {
+      const item = extractItem(uiItem);
+      if (item) {
         try {
-          telemetry.sendEvent("install.start", { agent: agent.name });
-          const installer = new AgentInstaller(context);
-          await installer.installAgent(agent);
-          // Refresh installed list after install
-          await agentProvider.refreshInstalledAgents();
-          marketplaceProvider.updateAgents(
-            agentProvider.getAllCachedAgents(),
-            agentProvider.getInstalledAgents(),
-          );
-          telemetry.sendEvent("install.success", { agent: agent.name });
+          telemetry.sendEvent("install.start", { item: item.name });
+
+          const installOptions: vscode.QuickPickItem[] = [];
+          if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+            const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+            const config = vscode.workspace.getConfiguration('chat');
+            const settingName = item.type === 'agent' ? 'agentFilesLocations' : 'agentSkillsLocations';
+            const configLocations = config.get<string[]>(settingName);
+
+            let locations: string[] = [];
+            if (Array.isArray(configLocations)) { locations = [...configLocations]; }
+
+            if (locations.length > 0) {
+              for (const loc of locations) {
+                installOptions.push({
+                  label: `Install to Workspace (${loc})`,
+                  description: path.isAbsolute(loc) ? loc : path.join(workspaceRoot, loc)
+                });
+              }
+            } else {
+              const defaultLoc = item.type === 'agent' ? '.github/agents' : '.github/skills';
+              installOptions.push({
+                label: `Install to Workspace (${defaultLoc})`,
+                description: path.join(workspaceRoot, defaultLoc)
+              });
+            }
+          }
+
+          if (item.type === 'agent') {
+            installOptions.push({
+              label: 'Install to User Profile (prompts)',
+              description: userPath
+            });
+          } else {
+            installOptions.push({
+              label: 'Install to Global Skills (~/.copilot/skills)',
+              description: globalSkillPath
+            });
+          }
+
+          const selection = await vscode.window.showQuickPick(installOptions, { placeHolder: `Where do you want to install ${item.name}?` });
+
+          if (selection && selection.description) {
+            const installBasePath = selection.description;
+            await installerService.installItem(item, installBasePath);
+            vscode.window.showInformationMessage(`${item.type === 'agent' ? 'Agent' : 'Skill'} ${item.name} installed successfully.`);
+
+            // Always refresh the UI first, regardless of whether we can open the file
+            await refreshInstalledItems();
+            webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
+            telemetry.sendEvent("install.success", { item: item.name });
+
+            // Try to open the installed file in the editor
+            try {
+              const fileName = path.basename(item.path);
+              let finalFileDir = installBasePath;
+              if (item.baseDirectory) {
+                finalFileDir = path.join(installBasePath, item.baseDirectory);
+              }
+              const finalFilePath = path.join(finalFileDir, fileName);
+              const doc = await vscode.workspace.openTextDocument(finalFilePath);
+              await vscode.window.showTextDocument(doc);
+            } catch (openErr) {
+              // Non-fatal: the file was installed, we just couldn't open it
+              console.warn(`Could not open installed file in editor: ${openErr}`);
+            }
+          }
         } catch (error) {
-          telemetry.sendError(error as Error, {
-            context: "install",
-            agent: agent.name,
-          });
-          vscode.window.showErrorMessage(`Failed to install agent: ${error}`);
+          telemetry.sendError(error as Error, { context: "install", item: item?.name || 'unknown' });
+          vscode.window.showErrorMessage(`Failed to install item: ${error}`);
         }
       } else {
-        vscode.window.showInformationMessage(
-          "Please select an agent from the list to install.",
-        );
+        vscode.window.showInformationMessage("Please select an item from the list to install.");
       }
-    },
+    }
   );
 
   let updateDisposable = vscode.commands.registerCommand(
-    "agentManager.update",
-    async (item: any) => {
-      const agent = extractAgent(item);
-      if (agent && item.updateAgent) {
+    "marketplace.update",
+    async (uiItem: any) => {
+      const item = extractItem(uiItem);
+      if (item && uiItem.updateItem) {
         try {
-          telemetry.sendEvent("update.start", { agent: item.agent.name });
-          const installer = new AgentInstaller(context);
-          // Quick update: overwrite the existing file
-          // We know the installed path from agent.path
-          await installer.installAgent(item.updateAgent, agent.path);
+          telemetry.sendEvent("update.start", { item: item.name });
+          const status = await installerService.updateItem(uiItem.updateItem as IMarketplaceItem, item.path);
 
-          // Refresh
-          await agentProvider.refreshInstalledAgents();
-          telemetry.sendEvent("update.success", { agent: agent.name });
+          if (status === 'updated') {
+            vscode.window.showInformationMessage(`${item.type === 'agent' ? 'Agent' : 'Skill'} ${item.name} updated successfully.`);
+            const doc = await vscode.workspace.openTextDocument(item.path);
+            await vscode.window.showTextDocument(doc);
+          } else if (status === 'cancelled') {
+            vscode.window.showInformationMessage('Update cancelled.');
+          }
+
+          await refreshInstalledItems();
+          telemetry.sendEvent("update.success", { item: item.name });
         } catch (error) {
-          telemetry.sendError(error as Error, {
-            context: "update",
-            agent: agent.name,
-          });
-          vscode.window.showErrorMessage(`Failed to update agent: ${error}`);
+          telemetry.sendError(error as Error, { context: "update", item: item.name });
+          vscode.window.showErrorMessage(`Failed to update item: ${error}`);
         }
       }
-    },
+    }
   );
 
   let uninstallDisposable = vscode.commands.registerCommand(
-    "agentManager.uninstall",
-    async (item: any) => {
-      const agent = extractAgent(item);
-      if (!agent) {
-        return;
-      }
+    "marketplace.uninstall",
+    async (uiItem: any) => {
+      const item = extractItem(uiItem);
+      if (!item) { return; }
 
-      // Find the installed agent to get the path
-      const installed = agentProvider
-        .getInstalledAgents()
-        .find((a) => a.name === agent.name);
+      const installedList = item.type === 'agent' ? treeProvider.getInstalledItems().agents : treeProvider.getInstalledItems().skills;
+      const installed = installedList.find(a => a.name === item.name);
+
       if (installed && installed.path) {
         const confirm = await vscode.window.showWarningMessage(
-          `Are you sure you want to uninstall ${agent.name}?`,
-          { modal: true },
-          "Uninstall",
+          `Are you sure you want to uninstall ${item.name}?`,
+          { modal: true }, "Uninstall"
         );
 
         if (confirm === "Uninstall") {
           try {
-            telemetry.sendEvent("uninstall.start", { agent: agent.name });
-            await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
-            vscode.window.showInformationMessage(`Uninstalled ${agent.name}`);
-            await agentProvider.refreshInstalledAgents();
-            marketplaceProvider.updateAgents(
-              agentProvider.getAllCachedAgents(),
-              agentProvider.getInstalledAgents(),
-            );
-            telemetry.sendEvent("uninstall.success", { agent: agent.name });
+            telemetry.sendEvent("uninstall.start", { item: item.name });
+
+            if (item.type === 'skill') {
+              const parentDir = path.dirname(installed.path);
+              // Treat skill directories as packages - delete the whole folder,
+              // UNLESS the skill is installed directly in a root skills dir (no subdirectory)
+              const skillRootDirs = [
+                path.join(os.homedir(), '.copilot', 'skills'),
+              ];
+              if (vscode.workspace.workspaceFolders) {
+                const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+                const config = vscode.workspace.getConfiguration('chat');
+                const skillSetting = config.get<string[]>('agentSkillsLocations') || [];
+                const skillPaths = skillSetting.length > 0 ? skillSetting : ['.github/skills'];
+                for (const loc of skillPaths) {
+                  skillRootDirs.push(path.isAbsolute(loc) ? loc : path.join(workspaceRoot, loc));
+                }
+              }
+
+              const isRootDir = skillRootDirs.some(r => path.resolve(parentDir) === path.resolve(r));
+              if (isRootDir) {
+                // Flat install - just delete the file
+                await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
+              } else {
+                // Packaged install - delete the whole skill directory
+                await vscode.workspace.fs.delete(vscode.Uri.file(parentDir), { recursive: true });
+              }
+            } else {
+              await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
+            }
+
+            vscode.window.showInformationMessage(`Uninstalled ${item.name}`);
+
+            await refreshInstalledItems();
+            webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
+            telemetry.sendEvent("uninstall.success", { item: item.name });
           } catch (error) {
-            telemetry.sendError(error as Error, {
-              context: "uninstall",
-              agent: agent.name,
-            });
+            telemetry.sendError(error as Error, { context: "uninstall", item: item.name });
             vscode.window.showErrorMessage(`Failed to uninstall: ${error}`);
           }
         }
       } else {
-        vscode.window.showErrorMessage(
-          `Could not find installation of ${agent.name}`,
-        );
+        vscode.window.showErrorMessage(`Could not find installation of ${item.name}`);
       }
-    },
+    }
   );
 
   let openSettingsDisposable = vscode.commands.registerCommand(
     "agentManager.openSettings",
     () => {
-      vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "@ext:luizbon.vscode-agent-manager",
-      );
-    },
+      vscode.commands.executeCommand("workbench.action.openSettings", "@ext:luizbon.vscode-agent-manager");
+    }
   );
 
   let openDetailsDisposable = vscode.commands.registerCommand(
-    "agentManager.openAgentDetails",
-    (agent: any, searchTerm?: string) => {
-      console.log(
-        "agentManager.openAgentDetails triggered with:",
-        agent,
-        searchTerm,
-      );
-      if (!agent) {
-        vscode.window.showErrorMessage(
-          "Failed to open agent details: No agent data provided.",
-        );
+    "marketplace.openDetails",
+    (item: any, searchTerm?: string) => {
+      if (!item) {
+        vscode.window.showErrorMessage("Failed to open details: No item data provided.");
         return;
       }
       try {
-        // Check if agent is TreeItem or raw object
-        let agentData = agent.agent || agent;
-        telemetry.sendEvent("openDetails", {
-          agent: agentData.name,
-          hasSearchTerm: (!!searchTerm).toString(),
-        });
-        AgentDetailsPanel.createOrShow(context, agentData, searchTerm);
+        let itemData = item.item || item;
+        telemetry.sendEvent("openDetails", { item: itemData.name, hasSearchTerm: (!!searchTerm).toString() });
+        DetailsPanel.createOrShow(context, itemData, searchTerm);
       } catch (error) {
-        console.error("Error creating AgentDetailsPanel:", error);
+        console.error("Error creating DetailsPanel:", error);
         telemetry.sendError(error as Error, { context: "openDetails" });
         vscode.window.showErrorMessage(`Error opening panel: ${error}`);
       }
-    },
+    }
   );
 
   let feedbackDisposable = vscode.commands.registerCommand(
     "agentManager.feedback",
     async () => {
       const feedbackTypes = ["Report a Bug", "Feature Request"];
-      const selectedKey = await vscode.window.showQuickPick(feedbackTypes, {
-        placeHolder: "What kind of feedback do you have?",
-      });
+      const selectedKey = await vscode.window.showQuickPick(feedbackTypes, { placeHolder: "What kind of feedback do you have?" });
 
-      if (!selectedKey) {
-        return;
-      }
+      if (!selectedKey) { return; }
 
       const isBug = selectedKey === "Report a Bug";
+      const extensionVersion = vscode.extensions.getExtension("luizbon.vscode-agent-manager")?.packageJSON.version || "unknown";
+      const systemInfo = `**Environment:**\n- OS: ${os.platform()} ${os.release()} (${os.arch()})\n- VS Code: ${vscode.version}\n- Extension Version: ${extensionVersion}\n- Remote: ${vscode.env.remoteName || "local"}`;
 
-      // Gather system info
-      const extensionVersion =
-        vscode.extensions.getExtension("luizbon.vscode-agent-manager")
-          ?.packageJSON.version || "unknown";
-      const systemInfo = [
-        `**Environment:**`,
-        `- OS: ${os.platform()} ${os.release()} (${os.arch()})`,
-        `- VS Code: ${vscode.version}`,
-        `- Extension Version: ${extensionVersion}`,
-        `- Remote: ${vscode.env.remoteName || "local"}`,
-      ].join("\n");
+      const title = isBug ? "Bug Report: <short description>" : "Feature Request: <short description>";
+      const body = isBug
+        ? `**Description**\n\n**Steps to Reproduce**\n1.\n2.\n\n**Expected Behavior**\n\n**Actual Behavior**\n\n${systemInfo}`
+        : `**Feature Description**\n\n**Use Case**\n\n${systemInfo}`;
 
-      let title = "";
-      let body = "";
-
-      if (isBug) {
-        title = "Bug Report: <short description>";
-        body = `**Description**\n\n**Steps to Reproduce**\n1.\n2.\n\n**Expected Behavior**\n\n**Actual Behavior**\n\n${systemInfo}`;
-      } else {
-        title = "Feature Request: <short description>";
-        body = `**Feature Description**\n\n**Use Case**\n\n${systemInfo}`;
-      }
-
-      const query = querystring.stringify({
-        title: title,
-        body: body,
-      });
-
+      const query = querystring.stringify({ title, body });
       const url = `https://github.com/luizbon/vscode-agent-manager/issues/new?${query}`;
       vscode.env.openExternal(vscode.Uri.parse(url));
-    },
+    }
   );
 
-  // Create status bar item (Priority 100 to be on the left side of other extension items if any)
-  const feedbackStatusBarItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    100,
-  );
+  const feedbackStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   feedbackStatusBarItem.text = "$(comment-discussion) Feedback";
   feedbackStatusBarItem.tooltip = "Send Feedback for Agent Manager";
   feedbackStatusBarItem.command = "agentManager.feedback";
@@ -435,17 +455,23 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(openDetailsDisposable);
   context.subscriptions.push(feedbackDisposable);
 
-  // Watch for configuration changes to auto-refresh
+  // Aliases for backward compatibility in package.json until fully replaced
+  context.subscriptions.push(vscode.commands.registerCommand("agentManager.search", () => vscode.commands.executeCommand("marketplace.search")));
+  context.subscriptions.push(vscode.commands.registerCommand("agentManager.install", (i) => vscode.commands.executeCommand("marketplace.install", i)));
+  context.subscriptions.push(vscode.commands.registerCommand("agentManager.update", (i) => vscode.commands.executeCommand("marketplace.update", i)));
+  context.subscriptions.push(vscode.commands.registerCommand("agentManager.uninstall", (i) => vscode.commands.executeCommand("marketplace.uninstall", i)));
+  context.subscriptions.push(vscode.commands.registerCommand("agentManager.refreshSource", (i) => vscode.commands.executeCommand("marketplace.refreshSource", i)));
+  context.subscriptions.push(vscode.commands.registerCommand("agentManager.openAgentDetails", (i) => vscode.commands.executeCommand("marketplace.openDetails", i)));
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("agentManager.repositories")) {
-        vscode.commands.executeCommand("agentManager.search");
+        vscode.commands.executeCommand("marketplace.search");
       }
-    }),
+    })
   );
 
-  // Initial search on activation (will use cache if valid)
-  vscode.commands.executeCommand("agentManager.search");
+  vscode.commands.executeCommand("marketplace.search");
 }
 
-export function deactivate() {}
+export function deactivate() { }
