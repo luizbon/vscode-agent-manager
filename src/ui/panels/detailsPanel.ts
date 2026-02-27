@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as upath from 'upath';
 import { execFile } from 'child_process';
 import { TelemetryService } from '../../services/telemetry';
 import { IMarketplaceItem } from '../../domain/models/marketplaceItem';
@@ -148,6 +149,15 @@ export class DetailsPanel {
     private async checkInstallationStatus(item: IMarketplaceItem) {
         let localPath: string | undefined;
 
+        const getTargetPath = (basePath: string) => {
+            let finalDir = basePath;
+            if (item.baseDirectory) {
+                const safeBaseDir = upath.toUnix(item.baseDirectory).split('/').filter((p: string) => p && p !== '..').join('/');
+                finalDir = path.join(basePath, safeBaseDir);
+            }
+            return path.join(finalDir, path.basename(item.path));
+        };
+
         if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
             const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
             const config = vscode.workspace.getConfiguration('chat');
@@ -168,8 +178,8 @@ export class DetailsPanel {
             }
 
             for (const loc of pathsToCheck) {
-                const fileName = path.basename(item.path);
-                const fullPath = path.isAbsolute(loc) ? path.join(loc, fileName) : path.join(workspaceRoot, loc, fileName);
+                const basePath = path.isAbsolute(loc) ? loc : path.join(workspaceRoot, loc);
+                const fullPath = getTargetPath(basePath);
 
                 if (fs.existsSync(fullPath)) {
                     localPath = fullPath;
@@ -179,17 +189,17 @@ export class DetailsPanel {
         }
 
         if (!localPath) {
-            const fileName = path.basename(item.path);
             if (item.type === 'agent') {
                 const globalStoragePath = this.context.globalStorageUri.fsPath;
                 const userDir = path.dirname(path.dirname(globalStoragePath));
-                const p = path.join(userDir, 'prompts', fileName);
+                const basePath = path.join(userDir, 'prompts');
+                const p = getTargetPath(basePath);
                 if (fs.existsSync(p)) {
                     localPath = p;
                 }
             } else {
                 const globalSkillPath = path.join(os.homedir(), '.copilot', 'skills');
-                const p = path.join(globalSkillPath, fileName);
+                const p = getTargetPath(globalSkillPath);
                 if (fs.existsSync(p)) {
                     localPath = p;
                 }
