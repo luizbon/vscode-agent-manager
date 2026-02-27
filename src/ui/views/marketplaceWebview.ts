@@ -273,6 +273,15 @@ export class MarketplaceWebviewProvider implements vscode.WebviewViewProvider {
                                 (a.tags && a.tags.some(t => t.toLowerCase().includes(term)))
                             );
                         }
+
+                        // Deduplicate items by type and name to prevent rendering duplicates
+                        const seenKeys = new Set();
+                        filtered = filtered.filter(item => {
+                            const key = item.type + ':' + item.name;
+                            if (seenKeys.has(key)) return false;
+                            seenKeys.add(key);
+                            return true;
+                        });
                         
                         renderItems(filtered);
                     }
