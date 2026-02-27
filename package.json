@@ -2,7 +2,7 @@
   "name": "vscode-agent-manager",
   "displayName": "VS Code Agent Manager",
   "description": "Search and install GitHub Copilot agents from remote repositories.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "icon": "resources/agent-manager-logo.png",
   "publisher": "luizbon",
   "keywords": [
