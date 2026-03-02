@@ -29,7 +29,9 @@ export function activate(context: vscode.ExtensionContext) {
     'Congratulations, your extension "vscode-agent-manager" is now active!',
   );
 
-  const telemetry = TelemetryService.getInstance();
+  const connectionString: string =
+    vscode.extensions.getExtension('luizbon.vscode-agent-manager')?.packageJSON?.aiKey ?? '';
+  const telemetry = TelemetryService.getInstance(connectionString);
   context.subscriptions.push(telemetry);
 
   // Check if we have asked about telemetry
@@ -448,4 +450,4 @@ export function activate(context: vscode.ExtensionContext) {
   vscode.commands.executeCommand("agentManager.search");
 }
 
-export function deactivate() {}
+export function deactivate() { }

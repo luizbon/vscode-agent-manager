@@ -1,5 +1,6 @@
 {
   "name": "vscode-agent-manager",
+  "aiKey": "00000000-0000-0000-0000-000000000000",
   "displayName": "VS Code Agent Manager",
   "description": "Search and install GitHub Copilot agents from remote repositories.",
   "version": "0.2.2",
