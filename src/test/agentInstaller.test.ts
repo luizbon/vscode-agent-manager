@@ -2,6 +2,7 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import * as vscode from "vscode";
 import * as fs from "fs";
+import * as path from "path";
 import { AgentInstaller } from "../agent/agentInstaller";
 import { Agent } from "../agent/agentDiscovery";
 import { GitService } from "../services/gitService";
@@ -75,11 +76,16 @@ suite("AgentInstaller Test Suite", () => {
       repository: "https://github.com/owner/repo",
     };
 
+    // Use path.join so path separators are correct on all platforms (Windows uses \)
+    const agentsDir = path.join(path.sep === '\\' ? 'C:\\tmp\\workspace' : '/tmp/workspace', '.github', 'agents');
+    const expectedInstallPath = path.join(agentsDir, 'agent.md');
+    const expectedStateKey = `agentSha:${expectedInstallPath}`;
+
     const showQuickPickStub = sandbox
       .stub(vscode.window, "showQuickPick")
       .resolves({
         label: "Install to Workspace",
-        description: "/tmp/workspace/.github/agents",
+        description: agentsDir,
       } as any);
 
     const fsExistsSyncStub = sandbox.stub(fs, "existsSync").returns(true); // Don't create dir
@@ -102,12 +108,13 @@ suite("AgentInstaller Test Suite", () => {
       fsCopyFileStub.calledWith(agent.installUrl, sinon.match(/agent\.md$/)),
     );
     // Check state was updated instead of .base file
+    // Use platform-computed path so this passes on both Windows (\) and Unix (/)
     assert.ok(
       (mockContext.workspaceState.update as sinon.SinonStub).calledWith(
-        "agentSha:/tmp/workspace/.github/agents/agent.md",
+        expectedStateKey,
         "abcd123",
       ),
-      "workspaceState should be updated with git SHA",
+      `workspaceState should be updated with git SHA (expected key: ${expectedStateKey})`,
     );
     assert.ok(
       showInfoStub.calledWithMatch(sinon.match(/installed successfully/)),
