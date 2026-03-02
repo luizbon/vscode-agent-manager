@@ -104,7 +104,7 @@ jobs:
 
       - name: Inject Telemetry Key
         env:
-          TELEMETRY_KEY: ${{ secrets.TELEMETRY_KEY }}
+          TELEMETRY_KEY: ${{ vars.TELEMETRY_KEY }}
         run: |
           if [ -n "$TELEMETRY_KEY" ]; then
             sed -i "s/00000000-0000-0000-0000-000000000000/$TELEMETRY_KEY/g" package.json
@@ -159,7 +159,7 @@ jobs:
 
       - name: Inject Telemetry Key
         env:
-          TELEMETRY_KEY: ${{ secrets.TELEMETRY_KEY }}
+          TELEMETRY_KEY: ${{ vars.TELEMETRY_KEY }}
         run: |
           if [ -n "$TELEMETRY_KEY" ]; then
             sed -i "s/00000000-0000-0000-0000-000000000000/$TELEMETRY_KEY/g" package.json
