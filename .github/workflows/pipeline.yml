@@ -26,6 +26,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Inject Telemetry Key
+        env:
+          TELEMETRY_KEY: ${{ vars.TELEMETRY_KEY }}
+        run: |
+          if [ -z "$TELEMETRY_KEY" ]; then
+            echo "::error::TELEMETRY_KEY variable is not set. Add it under Settings → Secrets and variables → Actions → Variables."
+            exit 1
+          fi
+
+          TARGET="src/services/telemetry.ts"
+          PLACEHOLDER="00000000-0000-0000-0000-000000000000"
+
+          sed -i "s/$PLACEHOLDER/$TELEMETRY_KEY/g" "$TARGET"
+
+          if grep -q "$PLACEHOLDER" "$TARGET"; then
+            echo "::error::Telemetry key injection failed — placeholder '$PLACEHOLDER' still found in $TARGET. Check the file path and placeholder value."
+            exit 1
+          fi
+
+          echo "Telemetry key successfully injected into $TARGET."
 
       - name: Compile
         run: npm run compile
@@ -102,30 +122,20 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Inject Telemetry Key
-        env:
-          TELEMETRY_KEY: ${{ vars.TELEMETRY_KEY }}
-        run: |
-          if [ -n "$TELEMETRY_KEY" ]; then
-            sed -i "s/00000000-0000-0000-0000-000000000000/$TELEMETRY_KEY/g" package.json
-          else
-            echo "No telemetry key provided, skipping injection."
-          fi
-
       - name: Publish to VS Code Marketplace
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           BASE_VERSION=$(node -p "require('./package.json').version")
           MINOR=$(echo $BASE_VERSION | cut -d. -f2)
-          
+
           if [ $((MINOR % 2)) -ne 0 ]; then
             BUMP="minor"
           else
             BUMP="patch"
           fi
-          
+
           npx @vscode/vsce publish $BUMP -p ${{ secrets.VSCE_PAT }}
           git push origin HEAD:main --follow-tags
 
@@ -157,29 +167,19 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Inject Telemetry Key
-        env:
-          TELEMETRY_KEY: ${{ vars.TELEMETRY_KEY }}
-        run: |
-          if [ -n "$TELEMETRY_KEY" ]; then
-            sed -i "s/00000000-0000-0000-0000-000000000000/$TELEMETRY_KEY/g" package.json
-          else
-            echo "No telemetry key provided, skipping injection."
-          fi
-
       - name: Publish Pre-release to VS Code Marketplace
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           BASE_VERSION=$(node -p "require('./package.json').version")
           MINOR=$(echo $BASE_VERSION | cut -d. -f2)
-          
+
           if [ $((MINOR % 2)) -eq 0 ]; then
             BUMP="minor"
           else
             BUMP="patch"
           fi
-          
+
           npx @vscode/vsce publish $BUMP --pre-release -p ${{ secrets.VSCE_PAT }}
           git push origin HEAD:${{ github.head_ref }} --follow-tags
