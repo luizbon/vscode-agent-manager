@@ -41,7 +41,7 @@ jobs:
           AI_PLACEHOLDER="00000000-0000-0000-0000-000000000000"
           PH_PLACEHOLDER="POSTHOG_PLACEHOLDER"
 
-          sed -i "s/$AI_PLACEHOLDER/$TELEMETRY_KEY/g" "$TARGET"
+          sed -i "s|$AI_PLACEHOLDER|$TELEMETRY_KEY|g" "$TARGET"
 
           if grep -q "$AI_PLACEHOLDER" "$TARGET"; then
             echo "::error::Telemetry key injection failed — placeholder '$AI_PLACEHOLDER' still found in $TARGET."
@@ -51,14 +51,14 @@ jobs:
           echo "App Insights key successfully injected into $TARGET."
 
           if [ -n "$POSTHOG_API_KEY" ]; then
-            sed -i "s/$PH_PLACEHOLDER/$POSTHOG_API_KEY/g" "$TARGET"
+            sed -i "s|$PH_PLACEHOLDER|$POSTHOG_API_KEY|g" "$TARGET"
             echo "PostHog API key successfully injected into $TARGET."
           else
             echo "::warning::POSTHOG_API_KEY is not set — PostHog telemetry will be disabled. Add it under Settings → Actions → Variables to enable it."
           fi
 
           if [ -n "$POSTHOG_HOST" ]; then
-            sed -i "s/POSTHOG_HOST_PLACEHOLDER/$POSTHOG_HOST/g" "$TARGET"
+            sed -i "s|POSTHOG_HOST_PLACEHOLDER|$POSTHOG_HOST|g" "$TARGET"
             echo "PostHog host overridden to $POSTHOG_HOST in $TARGET."
           fi
 
