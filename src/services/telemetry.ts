@@ -2,7 +2,13 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import { TelemetryReporter } from '@vscode/extension-telemetry';
 
-const PLACEHOLDER_KEY = '00000000-0000-0000-0000-000000000000';
+// This value is replaced by the CI pipeline with the real App Insights connection string.
+// DO NOT split or alter the literal below — the pipeline targets it via sed.
+const CONNECTION_STRING = '00000000-0000-0000-0000-000000000000';
+
+// Constructed at runtime so that sed does NOT replace this comparison value.
+// Allows us to detect whether the pipeline injection actually ran.
+const ZERO_GUID = ['00000000', '0000', '0000', '0000', '000000000000'].join('-');
 
 export class TelemetryService {
     private static instance: TelemetryService;
@@ -10,14 +16,14 @@ export class TelemetryService {
     private outputChannel?: vscode.OutputChannel;
     private readonly isLocalLog: boolean;
 
-    private constructor(connectionString: string) {
-        const isPlaceholder = !connectionString || connectionString.startsWith(PLACEHOLDER_KEY);
+    private constructor() {
+        const isPlaceholder = !CONNECTION_STRING || CONNECTION_STRING === ZERO_GUID;
         this.isLocalLog = isPlaceholder;
 
         if (isPlaceholder) {
             this.outputChannel = vscode.window.createOutputChannel('Agent Manager Telemetry');
         } else {
-            this.reporter = new TelemetryReporter(connectionString);
+            this.reporter = new TelemetryReporter(CONNECTION_STRING);
         }
     }
 
@@ -25,9 +31,9 @@ export class TelemetryService {
         return vscode.workspace.getConfiguration('agentManager').get<boolean>('enableTelemetry') ?? true;
     }
 
-    public static getInstance(connectionString: string = ''): TelemetryService {
+    public static getInstance(): TelemetryService {
         if (!TelemetryService.instance) {
-            TelemetryService.instance = new TelemetryService(connectionString);
+            TelemetryService.instance = new TelemetryService();
         }
         return TelemetryService.instance;
     }
