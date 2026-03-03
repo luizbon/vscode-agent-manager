@@ -11,7 +11,13 @@ const CONNECTION_STRING = '00000000-0000-0000-0000-000000000000';
 // DO NOT split or alter the literal below — the pipeline targets it via sed.
 const POSTHOG_API_KEY = 'POSTHOG_PLACEHOLDER';
 
-const POSTHOG_HOST = 'https://us.i.posthog.com';
+// This value is replaced by the CI pipeline with the PostHog host URL.
+// DO NOT split or alter the literal below — the pipeline targets it via sed.
+// Defaults to the US PostHog cloud if the pipeline does not inject a value.
+const POSTHOG_HOST = 'POSTHOG_HOST_PLACEHOLDER';
+
+const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
+const POSTHOG_HOST_SENTINEL = ['POSTHOG', 'HOST', 'PLACEHOLDER'].join('_');
 
 // Constructed at runtime so that sed does NOT replace this comparison value.
 // Allows us to detect whether the pipeline injection actually ran.
@@ -37,6 +43,9 @@ export class TelemetryService {
 
         const hasPostHog = POSTHOG_API_KEY && POSTHOG_API_KEY !== POSTHOG_PLACEHOLDER;
         if (hasPostHog) {
+            const posthogHost = (POSTHOG_HOST && POSTHOG_HOST !== POSTHOG_HOST_SENTINEL)
+                ? POSTHOG_HOST
+                : DEFAULT_POSTHOG_HOST;
             this.posthogReporter = new TelemetryReporter(
                 // The connection string is still required by the constructor even when
                 // routing to PostHog, so we pass the same AI key (or placeholder).
@@ -45,11 +54,11 @@ export class TelemetryService {
                 undefined, // initializationOptions
                 createPostHogFetcher(
                     POSTHOG_API_KEY,
-                    POSTHOG_HOST,
+                    posthogHost,
                     vscode.env.machineId
                 ),
                 {
-                    endpointUrl: `${POSTHOG_HOST.replace(/\/$/, '')}/capture`,
+                    endpointUrl: `${posthogHost.replace(/\/$/, '')}/capture`,
                     commonProperties: this.getCommonProperties()
                 }
             );

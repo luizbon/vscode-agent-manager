@@ -58,7 +58,7 @@ jobs:
           fi
 
           if [ -n "$POSTHOG_HOST" ]; then
-            sed -i "s|https://us.i.posthog.com|$POSTHOG_HOST|g" "$TARGET"
+            sed -i "s/POSTHOG_HOST_PLACEHOLDER/$POSTHOG_HOST/g" "$TARGET"
             echo "PostHog host overridden to $POSTHOG_HOST in $TARGET."
           fi
 
