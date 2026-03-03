@@ -31,19 +31,16 @@ suite('TelemetryService', () => {
         (TelemetryService as any).instance = undefined;
     });
 
-    suite('local mode (no valid connection string)', () => {
-        test('uses output channel when connection string is empty', () => {
-            TelemetryService.getInstance('');
-            assert.ok(createOutputChannelStub.calledOnce, 'Output channel should be created');
-        });
-
-        test('uses output channel when connection string is the placeholder key', () => {
-            TelemetryService.getInstance('00000000-0000-0000-0000-000000000000');
+    suite('local mode (placeholder connection string in dev/test)', () => {
+        test('uses output channel when CONNECTION_STRING is the placeholder', () => {
+            // In the test environment the compile-time constant is never replaced by the
+            // CI pipeline, so TelemetryService should always fall back to the output channel.
+            TelemetryService.getInstance();
             assert.ok(createOutputChannelStub.calledOnce, 'Output channel should be created');
         });
 
         test('sendEvent appends to output channel', () => {
-            const service = TelemetryService.getInstance('');
+            const service = TelemetryService.getInstance();
             service.sendEvent('test.event', { key: 'value' });
             assert.ok(appendLineStub.calledOnce, 'appendLine should be called');
             assert.ok(
@@ -53,7 +50,7 @@ suite('TelemetryService', () => {
         });
 
         test('sendError appends to output channel', () => {
-            const service = TelemetryService.getInstance('');
+            const service = TelemetryService.getInstance();
             service.sendError(new Error('test error'));
             assert.ok(appendLineStub.calledOnce, 'appendLine should be called');
             assert.ok(
@@ -72,7 +69,7 @@ suite('TelemetryService', () => {
                 update: sandbox.stub(),
             } as unknown as vscode.WorkspaceConfiguration);
 
-            const service = TelemetryService.getInstance('');
+            const service = TelemetryService.getInstance();
             service.sendEvent('test.event');
             assert.ok(appendLineStub.notCalled, 'appendLine should not be called when telemetry is disabled');
         });
@@ -85,7 +82,7 @@ suite('TelemetryService', () => {
                 update: sandbox.stub(),
             } as unknown as vscode.WorkspaceConfiguration);
 
-            const service = TelemetryService.getInstance('');
+            const service = TelemetryService.getInstance();
             service.sendError(new Error('should not be logged'));
             assert.ok(appendLineStub.notCalled, 'appendLine should not be called when telemetry is disabled');
         });
@@ -93,9 +90,10 @@ suite('TelemetryService', () => {
 
     suite('getInstance', () => {
         test('returns the same instance on subsequent calls', () => {
-            const first = TelemetryService.getInstance('');
-            const second = TelemetryService.getInstance('some-other-key');
+            const first = TelemetryService.getInstance();
+            const second = TelemetryService.getInstance();
             assert.strictEqual(first, second, 'Same singleton instance should be returned');
         });
     });
 });
+

@@ -44,9 +44,7 @@ function extractItem(item: any): IMarketplaceItem | undefined {
 export function activate(context: vscode.ExtensionContext) {
   console.log('Congratulations, your extension "vscode-agent-manager" is now active!');
 
-  const connectionString: string =
-    vscode.extensions.getExtension('luizbon.vscode-agent-manager')?.packageJSON?.aiKey ?? '';
-  const telemetry = TelemetryService.getInstance(connectionString);
+  const telemetry = TelemetryService.getInstance();
   context.subscriptions.push(telemetry);
 
   const hasAskedTelemetry = context.globalState.get<boolean>("agentManager.hasAskedTelemetry");

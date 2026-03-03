@@ -1,6 +1,5 @@
 {
   "name": "vscode-agent-manager",
-  "aiKey": "00000000-0000-0000-0000-000000000000",
   "displayName": "VS Code Agent Manager",
   "description": "Search and install GitHub Copilot agents from remote repositories.",
   "version": "0.3.3",
@@ -187,7 +186,7 @@
     "eslint": "^10.0.0",
     "istanbul-lib-instrument": "^6.0.3",
     "mocha": "^11.7.5",
-    "nyc": "^17.1.0",
+    "nyc": "^18.0.0",
     "sinon": "^21.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
