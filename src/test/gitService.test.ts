@@ -4,6 +4,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { GitService } from "../services/gitService";
 
+// Use path.join throughout so tests work on both Unix and Windows.
+const DEST = path.resolve("/dest");
+const DEST1 = path.resolve("/dest1");
+const DEST2 = path.resolve("/dest2");
+
 suite("GitService Test Suite", () => {
     let sandbox: sinon.SinonSandbox;
     let gitService: GitService;
@@ -41,9 +46,11 @@ suite("GitService Test Suite", () => {
 
     suite("cloneOrPullRepo", () => {
         test("clones when .git directory does not exist", async () => {
+            const gitDir = path.join(DEST, ".git");
+
             const existsSyncStub = sandbox.stub(fs, "existsSync");
-            existsSyncStub.withArgs("/dest/.git").returns(false);
-            existsSyncStub.withArgs("/dest").returns(false);
+            existsSyncStub.withArgs(gitDir).returns(false);
+            existsSyncStub.withArgs(DEST).returns(false);
 
             sandbox
                 .stub(fs.promises, "mkdir")
@@ -54,31 +61,33 @@ suite("GitService Test Suite", () => {
                 "execCommand"
             ).resolves("");
 
-            await gitService.cloneOrPullRepo("https://github.com/o/r", "/dest");
+            await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
             assert.ok(
                 execStub.calledWith(
-                    'git clone --depth 1 --single-branch "https://github.com/o/r" "/dest"'
+                    `git clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
                 )
             );
         });
 
         test("pulls when valid .git directory exists", async () => {
+            const gitDir = path.join(DEST, ".git");
+
             const existsSyncStub = sandbox.stub(fs, "existsSync");
-            existsSyncStub.withArgs("/dest/.git").returns(true);
+            existsSyncStub.withArgs(gitDir).returns(true);
             // isValidGitRepo check
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "HEAD"))
+                .withArgs(path.join(DEST, ".git", "HEAD"))
                 .returns(true);
             // removeGitLockFiles checks
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "index.lock"))
+                .withArgs(path.join(DEST, ".git", "index.lock"))
                 .returns(false);
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "shallow.lock"))
+                .withArgs(path.join(DEST, ".git", "shallow.lock"))
                 .returns(false);
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "HEAD.lock"))
+                .withArgs(path.join(DEST, ".git", "HEAD.lock"))
                 .returns(false);
 
             const execStub = sandbox.stub(
@@ -86,23 +95,25 @@ suite("GitService Test Suite", () => {
                 "execCommand"
             ).resolves("");
 
-            await gitService.cloneOrPullRepo("https://github.com/o/r", "/dest");
+            await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
-            assert.ok(execStub.calledWith("git fetch --depth 1", "/dest"));
+            assert.ok(execStub.calledWith("git fetch --depth 1", DEST));
             assert.ok(
-                execStub.calledWith("git reset --hard origin/HEAD", "/dest")
+                execStub.calledWith("git reset --hard origin/HEAD", DEST)
             );
         });
 
         test("removes corrupt .git directory and reclones", async () => {
+            const gitDir = path.join(DEST, ".git");
+
             const existsSyncStub = sandbox.stub(fs, "existsSync");
-            existsSyncStub.withArgs("/dest/.git").returns(true);
+            existsSyncStub.withArgs(gitDir).returns(true);
             // isValidGitRepo returns false (no HEAD)
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "HEAD"))
+                .withArgs(path.join(DEST, ".git", "HEAD"))
                 .returns(false);
             // After rm, clone checks dir doesn't exist
-            existsSyncStub.withArgs("/dest").returns(false);
+            existsSyncStub.withArgs(DEST).returns(false);
 
             const rmStub = sandbox.stub(fs.promises, "rm").resolves();
             sandbox
@@ -115,42 +126,44 @@ suite("GitService Test Suite", () => {
             ).resolves("");
             sandbox.stub(console, "warn");
 
-            await gitService.cloneOrPullRepo("https://github.com/o/r", "/dest");
+            await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
-            assert.ok(rmStub.calledWith("/dest", { recursive: true, force: true }));
+            assert.ok(rmStub.calledWith(DEST, { recursive: true, force: true }));
             assert.ok(
                 execStub.calledWith(
-                    'git clone --depth 1 --single-branch "https://github.com/o/r" "/dest"'
+                    `git clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
                 )
             );
         });
 
         test("removes stale lock files before pulling", async () => {
+            const gitDir = path.join(DEST, ".git");
+
             const existsSyncStub = sandbox.stub(fs, "existsSync");
-            existsSyncStub.withArgs("/dest/.git").returns(true);
+            existsSyncStub.withArgs(gitDir).returns(true);
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "HEAD"))
+                .withArgs(path.join(DEST, ".git", "HEAD"))
                 .returns(true);
             // Lock file exists
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "index.lock"))
+                .withArgs(path.join(DEST, ".git", "index.lock"))
                 .returns(true);
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "shallow.lock"))
+                .withArgs(path.join(DEST, ".git", "shallow.lock"))
                 .returns(false);
             existsSyncStub
-                .withArgs(path.join("/dest", ".git", "HEAD.lock"))
+                .withArgs(path.join(DEST, ".git", "HEAD.lock"))
                 .returns(false);
 
             const unlinkSyncStub = sandbox.stub(fs, "unlinkSync");
             sandbox.stub(console, "warn");
             sandbox.stub(gitService as any, "execCommand").resolves("");
 
-            await gitService.cloneOrPullRepo("https://github.com/o/r", "/dest");
+            await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
             assert.ok(
                 unlinkSyncStub.calledWith(
-                    path.join("/dest", ".git", "index.lock")
+                    path.join(DEST, ".git", "index.lock")
                 )
             );
         });
@@ -158,15 +171,17 @@ suite("GitService Test Suite", () => {
 
     suite("clone failure cleanup", () => {
         test("cleans up newly created directory on clone failure", async () => {
+            const gitDir = path.join(DEST, ".git");
+
             const existsSyncStub = sandbox.stub(fs, "existsSync");
             // cloneOrPullRepo: .git doesn't exist
-            existsSyncStub.withArgs("/dest/.git").returns(false);
+            existsSyncStub.withArgs(gitDir).returns(false);
             // clone: dir didn't exist before
-            existsSyncStub.withArgs("/dest").onFirstCall().returns(false);
+            existsSyncStub.withArgs(DEST).onFirstCall().returns(false);
             // After failure, dir exists (needs cleanup)
-            existsSyncStub.withArgs("/dest").onSecondCall().returns(true);
+            existsSyncStub.withArgs(DEST).onSecondCall().returns(true);
             // Fallback mkdir check
-            existsSyncStub.withArgs("/dest").onThirdCall().returns(false);
+            existsSyncStub.withArgs(DEST).onThirdCall().returns(false);
 
             sandbox
                 .stub(fs.promises, "mkdir")
@@ -190,10 +205,10 @@ suite("GitService Test Suite", () => {
                 "getInstance"
             ).returns(telemetryStub);
 
-            await gitService.cloneOrPullRepo("https://github.com/o/r", "/dest");
+            await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
             assert.ok(
-                rmStub.calledWith("/dest", { recursive: true, force: true })
+                rmStub.calledWith(DEST, { recursive: true, force: true })
             );
         });
     });
@@ -223,8 +238,8 @@ suite("GitService Test Suite", () => {
             });
 
             // Fire two concurrent operations on the same path
-            const op1 = gitService.cloneOrPullRepo("https://github.com/o/r1", "/dest");
-            const op2 = gitService.cloneOrPullRepo("https://github.com/o/r2", "/dest");
+            const op1 = gitService.cloneOrPullRepo("https://github.com/o/r1", DEST);
+            const op2 = gitService.cloneOrPullRepo("https://github.com/o/r2", DEST);
 
             await Promise.all([op1, op2]);
 
@@ -260,8 +275,8 @@ suite("GitService Test Suite", () => {
             });
 
             // Fire two concurrent operations on different paths
-            const op1 = gitService.cloneOrPullRepo("https://github.com/o/r", "/dest1");
-            const op2 = gitService.cloneOrPullRepo("https://github.com/o/r", "/dest2");
+            const op1 = gitService.cloneOrPullRepo("https://github.com/o/r", DEST1);
+            const op2 = gitService.cloneOrPullRepo("https://github.com/o/r", DEST2);
 
             await Promise.all([op1, op2]);
 
@@ -298,7 +313,7 @@ suite("GitService Test Suite", () => {
             // First call should fail
             let firstFailed = false;
             try {
-                await gitService.cloneOrPullRepo("https://github.com/o/r", "/dest");
+                await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
             } catch {
                 firstFailed = true;
             }
@@ -309,7 +324,7 @@ suite("GitService Test Suite", () => {
             execStub.onSecondCall().resolves("");
 
             // Second call should succeed — lock was released despite the failure
-            await gitService.cloneOrPullRepo("https://github.com/o/r2", "/dest");
+            await gitService.cloneOrPullRepo("https://github.com/o/r2", DEST);
         });
     });
 });
