@@ -46,10 +46,13 @@ export class TelemetryService {
             const posthogHost = (POSTHOG_HOST && POSTHOG_HOST !== POSTHOG_HOST_SENTINEL)
                 ? POSTHOG_HOST
                 : DEFAULT_POSTHOG_HOST;
+            // The TelemetryReporter constructor requires a connection string even when
+            // routing exclusively to PostHog. Use the App Insights key when available,
+            // falling back to a dummy value that won't point to a real AI endpoint
+            // (PostHog traffic goes through the custom fetcher, not AI infrastructure).
+            const reporterKey = !isPlaceholder ? CONNECTION_STRING : `InstrumentationKey=00000000-0000-0000-0000-000000000001`;
             this.posthogReporter = new TelemetryReporter(
-                // The connection string is still required by the constructor even when
-                // routing to PostHog, so we pass the same AI key (or placeholder).
-                CONNECTION_STRING === ZERO_GUID ? 'NOOP' : CONNECTION_STRING,
+                reporterKey,
                 undefined, // replacementOptions
                 undefined, // initializationOptions
                 createPostHogFetcher(
@@ -82,11 +85,13 @@ export class TelemetryService {
         }
         const props = { ...this.getCommonProperties(), ...properties };
         if (this.isLocalLog) {
+            // No App Insights key injected — log locally for development visibility.
             this.outputChannel?.appendLine(`[Event] ${eventName} | Props: ${JSON.stringify(props)} | Metrics: ${JSON.stringify(measurements ?? {})}`);
         } else {
             this.reporter?.sendTelemetryEvent(eventName, props, measurements);
-            this.posthogReporter?.sendTelemetryEvent(eventName, props, measurements);
         }
+        // PostHog is independent of the App Insights key — always forward when configured.
+        this.posthogReporter?.sendTelemetryEvent(eventName, props, measurements);
     }
 
     public sendError(error: Error, properties?: { [key: string]: string }, measurements?: { [key: string]: number }): void {
@@ -100,11 +105,13 @@ export class TelemetryService {
             stack: error.stack ?? ''
         };
         if (this.isLocalLog) {
+            // No App Insights key injected — log locally for development visibility.
             this.outputChannel?.appendLine(`[Error] ${error.message} | Props: ${JSON.stringify(props)} | Metrics: ${JSON.stringify(measurements ?? {})}`);
         } else {
             this.reporter?.sendTelemetryErrorEvent('error', props, measurements);
-            this.posthogReporter?.sendTelemetryErrorEvent('error', props, measurements);
         }
+        // PostHog is independent of the App Insights key — always forward when configured.
+        this.posthogReporter?.sendTelemetryErrorEvent('error', props, measurements);
     }
 
     private getCommonProperties(): { [key: string]: string } {

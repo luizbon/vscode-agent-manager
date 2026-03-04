@@ -26,7 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Inject Telemetry Key
+      - name: Inject Telemetry Keys
+        # Keys are injected into source ONCE here, before compilation.
+        # All downstream jobs consume the pre-built artifacts — no re-injection needed.
         env:
           TELEMETRY_KEY: ${{ vars.TELEMETRY_KEY }}
           POSTHOG_API_KEY: ${{ vars.POSTHOG_API_KEY }}
@@ -68,6 +70,45 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Package Extension
+        # Packages the .vsix with the correct version bump.
+        # Publishing a pre-built .vsix skips vscode:prepublish entirely, so the
+        # compiled output with injected keys is preserved through to publication.
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MAJOR=$(echo $BASE_VERSION | cut -d. -f1)
+          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          PATCH=$(echo $BASE_VERSION | cut -d. -f3)
+
+          # Odd minor → release bumps minor; even minor → release bumps patch.
+          if [ $((MINOR % 2)) -ne 0 ]; then
+            RELEASE_BUMP="minor"
+            PRERELEASE_BUMP="patch"
+            RELEASE_VERSION="$MAJOR.$((MINOR + 1)).0"
+            PRERELEASE_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          else
+            RELEASE_BUMP="patch"
+            PRERELEASE_BUMP="minor"
+            RELEASE_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+            PRERELEASE_VERSION="$MAJOR.$((MINOR + 1)).0"
+          fi
+
+          # Package release .vsix (version bumped inline, no git tag yet).
+          npx @vscode/vsce package "$RELEASE_BUMP" --no-git-tag-version --out "release.vsix"
+
+          # Restore package.json to base version before packaging pre-release.
+          git checkout -- package.json
+
+          # Package pre-release .vsix.
+          npx @vscode/vsce package "$PRERELEASE_BUMP" --no-git-tag-version --pre-release --out "prerelease.vsix"
+
+          # Restore again so downstream git operations have the original version.
+          git checkout -- package.json
+
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "PRERELEASE_VERSION=$PRERELEASE_VERSION" >> "$GITHUB_OUTPUT"
+        id: package
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -79,6 +120,9 @@ jobs:
             package-lock.json
             .vscodeignore
             README.md
+            vscode.config.mjs
+            release.vsix
+            prerelease.vsix
 
   test:
     needs: build
@@ -106,11 +150,13 @@ jobs:
 
       - name: Run Tests (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a npm test
+        # Run the test runner directly to skip the `pretest` hook, which would
+        # recompile from the uninjected source and overwrite the compiled artifacts.
+        run: xvfb-run -a npx vscode-test --config vscode.config.mjs
 
       - name: Run Tests (Windows/Mac)
         if: runner.os != 'Linux'
-        run: npm test
+        run: npx vscode-test --config vscode.config.mjs
 
   release:
     needs: [build, test]
@@ -122,6 +168,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
@@ -138,20 +186,26 @@ jobs:
         run: npm ci
 
       - name: Publish to VS Code Marketplace
+        # Publish the pre-built .vsix produced in the build job.
+        # Publishing a .vsix file bypasses vscode:prepublish, so the compiled
+        # output with injected telemetry keys is preserved exactly as built.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          BASE_VERSION=$(node -p "require('./package.json').version")
-          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          npx @vscode/vsce publish --packagePath release.vsix -p ${{ secrets.VSCE_PAT }}
 
+          # Tag the version that was baked into the .vsix during build.
+          BASE=$(node -p "require('./package.json').version")
+          MAJOR=$(echo $BASE | cut -d. -f1)
+          MINOR=$(echo $BASE | cut -d. -f2)
+          PATCH=$(echo $BASE | cut -d. -f3)
           if [ $((MINOR % 2)) -ne 0 ]; then
-            BUMP="minor"
+            NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
           else
-            BUMP="patch"
+            NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
-
-          npx @vscode/vsce publish $BUMP -p ${{ secrets.VSCE_PAT }}
+          git tag "v$NEW_VERSION"
           git push origin HEAD:main --follow-tags
 
   prerelease:
@@ -183,18 +237,24 @@ jobs:
         run: npm ci
 
       - name: Publish Pre-release to VS Code Marketplace
+        # Publish the pre-built .vsix produced in the build job.
+        # Publishing a .vsix file bypasses vscode:prepublish, so the compiled
+        # output with injected telemetry keys is preserved exactly as built.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          BASE_VERSION=$(node -p "require('./package.json').version")
-          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          npx @vscode/vsce publish --packagePath prerelease.vsix -p ${{ secrets.VSCE_PAT }}
 
+          # Tag the pre-release version baked into the .vsix during build.
+          BASE=$(node -p "require('./package.json').version")
+          MAJOR=$(echo $BASE | cut -d. -f1)
+          MINOR=$(echo $BASE | cut -d. -f2)
+          PATCH=$(echo $BASE | cut -d. -f3)
           if [ $((MINOR % 2)) -eq 0 ]; then
-            BUMP="minor"
+            NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
           else
-            BUMP="patch"
+            NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
-
-          npx @vscode/vsce publish $BUMP --pre-release -p ${{ secrets.VSCE_PAT }}
+          git tag "v$NEW_VERSION-pre"
           git push origin HEAD:${{ github.head_ref }} --follow-tags
