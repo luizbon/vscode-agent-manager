@@ -171,6 +171,12 @@ jobs:
           else
             NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
+
+          # Update the repository version
+          npm version --no-git-tag-version "$NEW_VERSION"
+          git commit -am "chore: release v$NEW_VERSION [skip ci]"
+
+          # Tag and push
           git tag "v$NEW_VERSION"
           git push origin HEAD:main --follow-tags
 
@@ -222,5 +228,8 @@ jobs:
           else
             NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
-          git tag "v$NEW_VERSION-pre"
+
+          # Append the run number to the pre-release tag to ensure uniqueness across PR pushes
+          PRERELEASE_TAG="v$NEW_VERSION-pre.${{ github.run_number }}"
+          git tag "$PRERELEASE_TAG"
           git push origin HEAD:${{ github.head_ref }} --follow-tags
