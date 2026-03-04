@@ -5,6 +5,7 @@ import { Agent } from '../../domain/models/agent';
 import { Skill } from '../../domain/models/skill';
 import { AgentParser } from '../../domain/services/agentParser';
 import { SkillParser } from '../../domain/services/skillParser';
+import { TelemetryService } from '../../services/telemetry';
 
 export class GlobalStorage {
     constructor(private globalStoragePath: string) { }
@@ -26,6 +27,7 @@ export class GlobalStorage {
             }
         } catch (e) {
             console.error(`Error reading directory ${dir}:`, e);
+            TelemetryService.getInstance().sendError(e as Error, { context: 'globalStorage.readDir', dir });
         }
         return results;
     }
@@ -43,7 +45,7 @@ export class GlobalStorage {
                 const content = fs.readFileSync(fullPath, 'utf8');
                 const agent = AgentParser.parse(content, 'Global', fullPath);
                 if (agent) { agents.push(agent); }
-            } catch (e) { console.error(`Error parsing global agent ${fullPath}:`, e); }
+            } catch (e) { console.error(`Error parsing global agent ${fullPath}:`, e); TelemetryService.getInstance().sendError(e as Error, { context: 'globalStorage.agentParse', filePath: fullPath }); }
         }
 
         // Global Skills (~/.copilot/skills) - skills can be in subdirectories
@@ -53,7 +55,7 @@ export class GlobalStorage {
                 const content = fs.readFileSync(fullPath, 'utf8');
                 const skill = SkillParser.parse(content, 'Global', fullPath);
                 if (skill) { skills.push(skill); }
-            } catch (e) { console.error(`Error parsing global skill ${fullPath}:`, e); }
+            } catch (e) { console.error(`Error parsing global skill ${fullPath}:`, e); TelemetryService.getInstance().sendError(e as Error, { context: 'globalStorage.skillParse', filePath: fullPath }); }
         }
 
         return { agents, skills };

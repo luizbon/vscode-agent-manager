@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { TelemetryService } from '../../services/telemetry';
 
 export interface ParsedMetadata {
     name: string;
@@ -22,6 +23,7 @@ export class MarkdownParser {
                 metadata = yaml.load(match[1]) || {};
             } catch (e) {
                 console.error(`Error parsing YAML in ${filePath}:`, e);
+                TelemetryService.getInstance().sendError(e as Error, { context: 'yamlParse', filePath });
             }
         }
 

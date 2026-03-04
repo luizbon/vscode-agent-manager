@@ -7,6 +7,7 @@ import { AgentParser } from '../../domain/services/agentParser';
 import { SkillParser } from '../../domain/services/skillParser';
 import { IMarketplaceSource } from '../../application/ports/marketplaceSource';
 import { GitService } from '../../services/gitService';
+import { TelemetryService } from '../../services/telemetry';
 
 export class GitSource implements IMarketplaceSource {
     public async fetchItems(repoUrl: string, globalStoragePath: string): Promise<{ agents: Agent[], skills: Skill[] }> {
@@ -52,6 +53,7 @@ export class GitSource implements IMarketplaceSource {
                 }
             } catch (error) {
                 console.error(`Failed to parse item ${filePath}:`, error);
+                TelemetryService.getInstance().sendError(error as Error, { context: 'itemParse', filePath });
             }
         }
 
@@ -75,6 +77,7 @@ export class GitSource implements IMarketplaceSource {
             }
         } catch (error) {
             console.error(`Error reading directory ${dir}:`, error);
+            TelemetryService.getInstance().sendError(error as Error, { context: 'itemFileDiscovery', dir });
         }
         return results;
     }

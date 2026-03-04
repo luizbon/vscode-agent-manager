@@ -5,6 +5,7 @@ import { Agent } from '../../domain/models/agent';
 import { Skill } from '../../domain/models/skill';
 import { AgentParser } from '../../domain/services/agentParser';
 import { SkillParser } from '../../domain/services/skillParser';
+import { TelemetryService } from '../../services/telemetry';
 
 export class LocalWorkspaceStorage {
 
@@ -25,6 +26,7 @@ export class LocalWorkspaceStorage {
             }
         } catch (e) {
             console.error(`Error reading directory ${dir}:`, e);
+            TelemetryService.getInstance().sendError(e as Error, { context: 'workspaceStorage.readDir', dir });
         }
         return results;
     }
@@ -54,7 +56,7 @@ export class LocalWorkspaceStorage {
                         const content = fs.readFileSync(fullPath, 'utf8');
                         const agent = AgentParser.parse(content, 'Workspace', fullPath);
                         if (agent) { agents.push(agent); }
-                    } catch (e) { console.error(`Error parsing agent ${fullPath}:`, e); }
+                    } catch (e) { console.error(`Error parsing agent ${fullPath}:`, e); TelemetryService.getInstance().sendError(e as Error, { context: 'workspaceStorage.agentParse', filePath: fullPath }); }
                 }
             }
 
@@ -65,7 +67,7 @@ export class LocalWorkspaceStorage {
                         const content = fs.readFileSync(fullPath, 'utf8');
                         const skill = SkillParser.parse(content, 'Workspace', fullPath);
                         if (skill) { skills.push(skill); }
-                    } catch (e) { console.error(`Error parsing skill ${fullPath}:`, e); }
+                    } catch (e) { console.error(`Error parsing skill ${fullPath}:`, e); TelemetryService.getInstance().sendError(e as Error, { context: 'workspaceStorage.skillParse', filePath: fullPath }); }
                 }
             }
         }
