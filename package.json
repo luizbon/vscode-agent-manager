@@ -166,6 +166,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "clean": "rm -rf out",
+    "inject-telemetry": "node scripts/inject-telemetry.js",
+    "precompile": "npm run inject-telemetry",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",

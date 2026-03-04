@@ -3,26 +3,10 @@ import * as os from 'os';
 import { TelemetryReporter } from '@vscode/extension-telemetry';
 import { createPostHogFetcher } from './posthogFetcher';
 
-// This value is replaced by the CI pipeline with the real App Insights connection string.
-// DO NOT split or alter the literal below — the pipeline targets it via sed.
-const CONNECTION_STRING = '00000000-0000-0000-0000-000000000000';
-
-// This value is replaced by the CI pipeline with the PostHog project API key.
-// DO NOT split or alter the literal below — the pipeline targets it via sed.
-const POSTHOG_API_KEY = 'POSTHOG_PLACEHOLDER';
-
-// This value is replaced by the CI pipeline with the PostHog host URL.
-// DO NOT split or alter the literal below — the pipeline targets it via sed.
-// Defaults to the US PostHog cloud if the pipeline does not inject a value.
-const POSTHOG_HOST = 'POSTHOG_HOST_PLACEHOLDER';
-
+// Default PostHog host
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
-const POSTHOG_HOST_SENTINEL = ['POSTHOG', 'HOST', 'PLACEHOLDER'].join('_');
 
-// Constructed at runtime so that sed does NOT replace this comparison value.
-// Allows us to detect whether the pipeline injection actually ran.
-const ZERO_GUID = ['00000000', '0000', '0000', '0000', '000000000000'].join('-');
-const POSTHOG_PLACEHOLDER = ['POSTHOG', 'PLACEHOLDER'].join('_');
+const EXTENSION_ID = 'luizbon.vscode-agent-manager';
 
 export class TelemetryService {
     private static instance: TelemetryService;
@@ -32,40 +16,63 @@ export class TelemetryService {
     private readonly isLocalLog: boolean;
 
     private constructor() {
-        const isPlaceholder = !CONNECTION_STRING || CONNECTION_STRING === ZERO_GUID;
-        this.isLocalLog = isPlaceholder;
+        const connectionString = this.getConnectionString();
+        const postHogKey = this.getPostHogApiKey();
+        const postHogHost = this.getPostHogHost() || DEFAULT_POSTHOG_HOST;
 
-        if (isPlaceholder) {
+        this.isLocalLog = !connectionString;
+
+        if (this.isLocalLog) {
             this.outputChannel = vscode.window.createOutputChannel('Agent Manager Telemetry');
         } else {
-            this.reporter = new TelemetryReporter(CONNECTION_STRING);
+            this.reporter = new TelemetryReporter(connectionString!);
         }
 
-        const hasPostHog = POSTHOG_API_KEY && POSTHOG_API_KEY !== POSTHOG_PLACEHOLDER;
-        if (hasPostHog) {
-            const posthogHost = (POSTHOG_HOST && POSTHOG_HOST !== POSTHOG_HOST_SENTINEL)
-                ? POSTHOG_HOST
-                : DEFAULT_POSTHOG_HOST;
+        if (postHogKey) {
             // The TelemetryReporter constructor requires a connection string even when
             // routing exclusively to PostHog. Use the App Insights key when available,
             // falling back to a dummy value that won't point to a real AI endpoint
             // (PostHog traffic goes through the custom fetcher, not AI infrastructure).
-            const reporterKey = !isPlaceholder ? CONNECTION_STRING : `InstrumentationKey=00000000-0000-0000-0000-000000000001`;
+            const reporterKey = connectionString || 'InstrumentationKey=00000000-0000-0000-0000-000000000001';
             this.posthogReporter = new TelemetryReporter(
                 reporterKey,
                 undefined, // replacementOptions
                 undefined, // initializationOptions
                 createPostHogFetcher(
-                    POSTHOG_API_KEY,
-                    posthogHost,
+                    postHogKey,
+                    postHogHost,
                     vscode.env.machineId
                 ),
                 {
-                    endpointUrl: `${posthogHost.replace(/\/$/, '')}/capture`,
+                    endpointUrl: `${postHogHost.replace(/\/$/, '')}/capture`,
                     commonProperties: this.getCommonProperties()
                 }
             );
         }
+    }
+
+    private getConnectionString(): string | undefined {
+        if (process.env.TELEMETRY_CONNECTION_STRING) {
+            return process.env.TELEMETRY_CONNECTION_STRING;
+        }
+        const ext = vscode.extensions.getExtension(EXTENSION_ID);
+        return ext?.packageJSON?.telemetryConnectionString;
+    }
+
+    private getPostHogApiKey(): string | undefined {
+        if (process.env.POSTHOG_API_KEY) {
+            return process.env.POSTHOG_API_KEY;
+        }
+        const ext = vscode.extensions.getExtension(EXTENSION_ID);
+        return ext?.packageJSON?.posthogApiKey;
+    }
+
+    private getPostHogHost(): string | undefined {
+        if (process.env.POSTHOG_HOST) {
+            return process.env.POSTHOG_HOST;
+        }
+        const ext = vscode.extensions.getExtension(EXTENSION_ID);
+        return ext?.packageJSON?.posthogHost;
     }
 
     private get isEnabled(): boolean {

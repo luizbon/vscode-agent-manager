@@ -26,45 +26,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Inject Telemetry Keys
-        # Keys are injected into source ONCE here, before compilation.
-        # All downstream jobs consume the pre-built artifacts — no re-injection needed.
-        env:
-          TELEMETRY_KEY: ${{ vars.TELEMETRY_KEY }}
-          POSTHOG_API_KEY: ${{ vars.POSTHOG_API_KEY }}
-          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
-        run: |
-          if [ -z "$TELEMETRY_KEY" ]; then
-            echo "::error::TELEMETRY_KEY variable is not set. Add it under Settings → Secrets and variables → Actions → Variables."
-            exit 1
-          fi
-
-          TARGET="src/services/telemetry.ts"
-          AI_PLACEHOLDER="00000000-0000-0000-0000-000000000000"
-          PH_PLACEHOLDER="POSTHOG_PLACEHOLDER"
-
-          sed -i "s|$AI_PLACEHOLDER|$TELEMETRY_KEY|g" "$TARGET"
-
-          if grep -q "$AI_PLACEHOLDER" "$TARGET"; then
-            echo "::error::Telemetry key injection failed — placeholder '$AI_PLACEHOLDER' still found in $TARGET."
-            exit 1
-          fi
-
-          echo "App Insights key successfully injected into $TARGET."
-
-          if [ -n "$POSTHOG_API_KEY" ]; then
-            sed -i "s|$PH_PLACEHOLDER|$POSTHOG_API_KEY|g" "$TARGET"
-            echo "PostHog API key successfully injected into $TARGET."
-          else
-            echo "::warning::POSTHOG_API_KEY is not set — PostHog telemetry will be disabled. Add it under Settings → Actions → Variables to enable it."
-          fi
-
-          if [ -n "$POSTHOG_HOST" ]; then
-            sed -i "s|POSTHOG_HOST_PLACEHOLDER|$POSTHOG_HOST|g" "$TARGET"
-            echo "PostHog host overridden to $POSTHOG_HOST in $TARGET."
-          fi
-
       - name: Compile
+        env:
+          TELEMETRY_CONNECTION_STRING: ${{ secrets.TELEMETRY_KEY }}
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
         run: npm run compile
 
       - name: Lint

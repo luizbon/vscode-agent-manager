@@ -31,10 +31,11 @@ suite('TelemetryService', () => {
         (TelemetryService as any).instance = undefined;
     });
 
-    suite('local mode (placeholder connection string in dev/test)', () => {
-        test('uses output channel when CONNECTION_STRING is the placeholder', () => {
-            // In the test environment the compile-time constant is never replaced by the
-            // CI pipeline, so TelemetryService should always fall back to the output channel.
+    suite('local mode (no connection string found)', () => {
+        test('uses output channel when no connection string is provided', () => {
+            // By default in tests, no env var or extension metadata is present,
+            // so TelemetryService should fall back to the output channel.
+            sandbox.stub(vscode.extensions, 'getExtension').returns(undefined);
             TelemetryService.getInstance();
             assert.ok(createOutputChannelStub.calledOnce, 'Output channel should be created');
         });
