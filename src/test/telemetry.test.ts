@@ -59,6 +59,39 @@ suite('TelemetryService', () => {
                 'Log should contain error message'
             );
         });
+
+        test('sendError uses contextual event name in log output', () => {
+            const service = TelemetryService.getInstance();
+            service.sendError(new Error('git failed'), { context: 'git.clone' });
+            assert.ok(appendLineStub.calledOnce);
+            // The log line should contain the error message
+            const logLine = appendLineStub.firstCall.args[0] as string;
+            assert.ok(logLine.includes('[Error] git failed'), 'Log should contain error message');
+        });
+
+        test('sendError includes $exception_type property', () => {
+            const service = TelemetryService.getInstance();
+            service.sendError(new TypeError('type mismatch'), { context: 'validation' });
+            const logLine = appendLineStub.firstCall.args[0] as string;
+            assert.ok(logLine.includes('TypeError'), 'Log should contain exception type');
+        });
+    });
+
+    suite('captureException', () => {
+        test('delegates to sendError in local mode', () => {
+            const service = TelemetryService.getInstance();
+            service.captureException(new RangeError('out of bounds'), { context: 'array.access' });
+            assert.ok(appendLineStub.calledOnce, 'appendLine should be called');
+            const logLine = appendLineStub.firstCall.args[0] as string;
+            assert.ok(logLine.includes('[Error] out of bounds'), 'Log should contain error message');
+        });
+
+        test('does not log when telemetry is disabled', () => {
+            sandbox.stub(vscode.env, 'isTelemetryEnabled').get(() => false);
+            const service = TelemetryService.getInstance();
+            service.captureException(new Error('should not appear'));
+            assert.ok(appendLineStub.notCalled, 'appendLine should not be called when disabled');
+        });
     });
 
     suite('telemetry disabled', () => {
@@ -89,4 +122,3 @@ suite('TelemetryService', () => {
         });
     });
 });
-

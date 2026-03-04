@@ -34,6 +34,75 @@ interface PostHogEvent {
 }
 
 /**
+ * A single frame within a PostHog exception stacktrace.
+ * https://posthog.com/docs/error-tracking/installation/manual
+ */
+export interface PostHogStackFrame {
+    platform: 'custom';
+    lang: 'javascript';
+    function: string;
+    filename?: string;
+    lineno?: number;
+    colno?: number;
+    in_app?: boolean;
+}
+
+/**
+ * Parse a V8/Node.js stack trace string into an array of PostHog-compatible
+ * stack frames.  Handles formats such as:
+ *   at functionName (filename:line:col)
+ *   at filename:line:col
+ *   at new ClassName (filename:line:col)
+ *   at Object.<anonymous> (filename:line:col)
+ */
+export function parseStackTrace(stack: string | undefined): PostHogStackFrame[] {
+    if (!stack) {
+        return [];
+    }
+
+    const frames: PostHogStackFrame[] = [];
+    const lines = stack.split('\n');
+
+    // Regex matches:  at [async] [new] <fn> (<file>:<line>:<col>)
+    //            or:  at [async] [new] <fn> (<file>:<line>)
+    //            or:  at <file>:<line>:<col>
+    const frameRegex = /^\s*at\s+(?:async\s+)?(?:new\s+)?(.+?)\s+\((.+?):(\d+)(?::(\d+))?\)$|^\s*at\s+(?:async\s+)?(.+?):(\d+)(?::(\d+))?$/;
+
+    for (const line of lines) {
+        const match = frameRegex.exec(line.trim());
+        if (!match) {
+            continue;
+        }
+
+        if (match[1] !== undefined) {
+            // Named function form: at fn (file:line:col)
+            frames.push({
+                platform: 'custom',
+                lang: 'javascript',
+                function: match[1],
+                filename: match[2],
+                lineno: parseInt(match[3], 10),
+                colno: match[4] ? parseInt(match[4], 10) : undefined,
+                in_app: !match[2].includes('node_modules'),
+            });
+        } else if (match[5] !== undefined) {
+            // Anonymous form: at file:line:col
+            frames.push({
+                platform: 'custom',
+                lang: 'javascript',
+                function: '<anonymous>',
+                filename: match[5],
+                lineno: parseInt(match[6], 10),
+                colno: match[7] ? parseInt(match[7], 10) : undefined,
+                in_app: !match[5].includes('node_modules'),
+            });
+        }
+    }
+
+    return frames;
+}
+
+/**
  * Minimal fetch-compatible response returned to the library after forwarding
  * to PostHog so the library considers the send successful.
  */
@@ -106,11 +175,18 @@ export function parseAiBody(bodyString: string): AiEnvelope[] {
 
 /**
  * Transform an Application Insights envelope into a PostHog capture event.
+ *
+ * For exception envelopes, this produces a `$exception` event with a full
+ * `$exception_list` array per the PostHog manual error tracking schema.
+ *
+ * @param commonProperties Optional common properties to attach as `$set` / `$set_once`
+ *                         person properties for user-level filtering in PostHog.
  */
 export function transformEnvelope(
     envelope: AiEnvelope,
     apiKey: string,
-    distinctId: string
+    distinctId: string,
+    commonProperties?: Record<string, string>
 ): PostHogEvent | null {
     const baseData = envelope.baseData;
     const isException = envelope.baseType === 'ExceptionData';
@@ -118,8 +194,7 @@ export function transformEnvelope(
     // Derive a meaningful event name
     let eventName: string;
     if (isException) {
-        const exType = baseData?.exceptions?.[0]?.typeName;
-        eventName = exType ? `exception:${exType}` : 'exception';
+        eventName = '$exception';
     } else {
         eventName = baseData?.name ?? envelope.name ?? 'telemetry';
     }
@@ -135,14 +210,39 @@ export function transformEnvelope(
         }
     }
 
-    // For exceptions, also include stack/message at top level
+    // Build $exception_list per PostHog manual error tracking schema
     if (isException && baseData?.exceptions?.length) {
-        const ex = baseData.exceptions[0];
-        properties['$exception_type'] = ex.typeName ?? '';
-        properties['$exception_message'] = ex.message ?? '';
-        if (ex.stack) {
-            properties['$exception_stack_trace_raw'] = ex.stack;
+        const exceptionList = baseData.exceptions.map(ex => {
+            const frames = parseStackTrace(ex.stack);
+            return {
+                type: ex.typeName ?? 'Error',
+                value: ex.message ?? '',
+                mechanism: {
+                    handled: true,
+                    synthetic: false,
+                },
+                stacktrace: {
+                    type: 'raw' as const,
+                    frames,
+                },
+            };
+        });
+
+        properties['$exception_list'] = exceptionList;
+
+        // Keep flat properties for backwards compatibility and PostHog search
+        const firstEx = baseData.exceptions[0];
+        properties['$exception_type'] = firstEx.typeName ?? '';
+        properties['$exception_message'] = firstEx.message ?? '';
+        if (firstEx.stack) {
+            properties['$exception_stack_trace_raw'] = firstEx.stack;
         }
+    }
+
+    // Enrich with person properties for user-level filtering
+    if (commonProperties && Object.keys(commonProperties).length > 0) {
+        properties['$set'] = { ...commonProperties };
+        properties['$set_once'] = { ...commonProperties };
     }
 
     return {
@@ -158,14 +258,16 @@ export function transformEnvelope(
  * Factory: creates a `CustomFetcher` compatible with `@vscode/extension-telemetry`
  * that intercepts Application Insights payloads and forwards them to PostHog.
  *
- * @param apiKey     PostHog project API key.
- * @param host       PostHog host URL (e.g. https://us.i.posthog.com).
- * @param distinctId A stable anonymous identifier for the VS Code machine.
+ * @param apiKey           PostHog project API key.
+ * @param host             PostHog host URL (e.g. https://us.i.posthog.com).
+ * @param distinctId       A stable anonymous identifier for the VS Code machine.
+ * @param commonProperties Optional environment properties to send as `$set` / `$set_once`.
  */
 export function createPostHogFetcher(
     apiKey: string,
     host: string,
-    distinctId: string
+    distinctId: string,
+    commonProperties?: Record<string, string>
 ): CustomFetcher {
     const captureUrl = `${host.replace(/\/$/, '')}/capture`;
 
@@ -175,7 +277,7 @@ export function createPostHogFetcher(
             const envelopes = parseAiBody(bodyString);
 
             const sends = envelopes
-                .map(env => transformEnvelope(env, apiKey, distinctId))
+                .map(env => transformEnvelope(env, apiKey, distinctId, commonProperties))
                 .filter((evt): evt is PostHogEvent => evt !== null)
                 .map(evt => postToPostHog(captureUrl, evt));
 

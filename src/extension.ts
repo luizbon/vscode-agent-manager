@@ -415,6 +415,7 @@ export function activate(context: vscode.ExtensionContext) {
 
       const query = querystring.stringify({ title, body });
       const url = `https://github.com/luizbon/vscode-agent-manager/issues/new?${query}`;
+      telemetry.sendEvent('feedback.open', { feedbackType: isBug ? 'bug' : 'feature' });
       vscode.env.openExternal(vscode.Uri.parse(url));
     }
   );
@@ -447,6 +448,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("agentManager.repositories")) {
         vscode.commands.executeCommand("marketplace.search");
+        telemetry.sendEvent('configChange', { setting: 'repositories' });
       }
     })
   );
@@ -454,4 +456,10 @@ export function activate(context: vscode.ExtensionContext) {
   vscode.commands.executeCommand("marketplace.search");
 }
 
-export function deactivate() { }
+export function deactivate() {
+  try {
+    TelemetryService.getInstance().sendEvent('deactivate');
+  } catch {
+    // Extension is shutting down — swallow any errors.
+  }
+}

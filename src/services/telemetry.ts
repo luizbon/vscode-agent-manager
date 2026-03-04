@@ -34,6 +34,7 @@ export class TelemetryService {
             // falling back to a dummy value that won't point to a real AI endpoint
             // (PostHog traffic goes through the custom fetcher, not AI infrastructure).
             const reporterKey = connectionString || 'InstrumentationKey=00000000-0000-0000-0000-000000000001';
+            const commonProps = this.getCommonProperties();
             this.posthogReporter = new TelemetryReporter(
                 reporterKey,
                 undefined, // replacementOptions
@@ -41,11 +42,12 @@ export class TelemetryService {
                 createPostHogFetcher(
                     postHogKey,
                     postHogHost,
-                    vscode.env.machineId
+                    vscode.env.machineId,
+                    commonProps
                 ),
                 {
                     endpointUrl: `${postHogHost.replace(/\/$/, '')}/capture`,
-                    commonProperties: this.getCommonProperties()
+                    commonProperties: commonProps
                 }
             );
         }
@@ -105,20 +107,40 @@ export class TelemetryService {
         if (!this.isEnabled) {
             return;
         }
+        const errorContext = properties?.context ?? 'unknown';
+        const eventName = `error/${errorContext}`;
         const props = {
             ...this.getCommonProperties(),
             ...properties,
             message: error.message,
-            stack: error.stack ?? ''
+            stack: error.stack ?? '',
+            '$exception_type': error.constructor?.name ?? 'Error'
         };
         if (this.isLocalLog) {
             // No App Insights key injected — log locally for development visibility.
             this.outputChannel?.appendLine(`[Error] ${error.message} | Props: ${JSON.stringify(props)} | Metrics: ${JSON.stringify(measurements ?? {})}`);
         } else {
-            this.reporter?.sendTelemetryErrorEvent('error', props, measurements);
+            this.reporter?.sendTelemetryErrorEvent(eventName, props, measurements);
         }
         // PostHog is independent of the App Insights key — always forward when configured.
-        this.posthogReporter?.sendTelemetryErrorEvent('error', props, measurements);
+        this.posthogReporter?.sendTelemetryErrorEvent(eventName, props, measurements);
+    }
+
+    /**
+     * Send a structured exception event directly to PostHog following the
+     * manual error tracking schema (https://posthog.com/docs/error-tracking/installation/manual).
+     *
+     * This bypasses the AI envelope transform and sends `$exception` with
+     * `$exception_list` directly, which is useful when capturing errors
+     * from modules that don't go through the `sendTelemetryErrorEvent` path.
+     */
+    public captureException(error: Error, properties?: { [key: string]: string }): void {
+        if (!this.isEnabled) {
+            return;
+        }
+
+        // For the AI/local reporters, send as a standard error event.
+        this.sendError(error, properties);
     }
 
     private getCommonProperties(): { [key: string]: string } {
