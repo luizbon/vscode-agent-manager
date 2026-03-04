@@ -7,6 +7,35 @@ import { TelemetryService } from './telemetry';
 
 export class GitService {
     private useFallback = false;
+    private readonly pathLocks = new Map<string, Promise<void>>();
+
+    private normalisePath(p: string): string {
+        return path.resolve(p).toLowerCase();
+    }
+
+    private async withPathLock<T>(destPath: string, operation: () => Promise<T>): Promise<T> {
+        const key = this.normalisePath(destPath);
+        const previous = this.pathLocks.get(key) ?? Promise.resolve();
+
+        let releaseLock: () => void;
+        const lockPromise = new Promise<void>(resolve => {
+            releaseLock = resolve;
+        });
+        this.pathLocks.set(key, lockPromise);
+
+        // Wait for any previous operation on the same path to complete
+        await previous;
+
+        try {
+            return await operation();
+        } finally {
+            releaseLock!();
+            // Clean up if this is the latest lock in the chain
+            if (this.pathLocks.get(key) === lockPromise) {
+                this.pathLocks.delete(key);
+            }
+        }
+    }
 
     public getRepoDirName(repoUrl: string): string {
         const hash = crypto.createHash('md5').update(repoUrl).digest('hex');
@@ -18,17 +47,28 @@ export class GitService {
     }
 
     public async cloneOrPullRepo(repoUrl: string, destPath: string): Promise<void> {
-        const isRepo = fs.existsSync(path.join(destPath, '.git'));
-        if (isRepo) {
-            await this.pull(destPath);
-        } else {
-            await this.clone(repoUrl, destPath);
-        }
+        return this.withPathLock(destPath, async () => {
+            const gitDir = path.join(destPath, '.git');
+            const gitDirExists = fs.existsSync(gitDir);
+
+            if (gitDirExists && !this.isValidGitRepo(destPath)) {
+                // Corrupt or incomplete .git directory from a previous failed clone
+                console.warn(`Invalid .git directory detected at ${destPath}. Removing and recloning.`);
+                await fs.promises.rm(destPath, { recursive: true, force: true });
+                await this.clone(repoUrl, destPath);
+            } else if (gitDirExists) {
+                this.removeGitLockFiles(destPath);
+                await this.pull(destPath);
+            } else {
+                await this.clone(repoUrl, destPath);
+            }
+        });
     }
 
     private async clone(repoUrl: string, destPath: string): Promise<void> {
+        const dirExistedBefore = fs.existsSync(destPath);
         try {
-            if (!fs.existsSync(destPath)) {
+            if (!dirExistedBefore) {
                 await fs.promises.mkdir(destPath, { recursive: true });
             }
 
@@ -38,14 +78,29 @@ export class GitService {
                 await this.cloneFallback(repoUrl, destPath);
             }
         } catch (error) {
-            console.warn(`Native git clone failed for ${repoUrl}. Falling back to simple-git. Error: ${error}`);
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.clone', repoUrl });
-            this.useFallback = true;
-            await this.cloneFallback(repoUrl, destPath);
+            // Clean up partial clone directory if we created it
+            if (!dirExistedBefore && fs.existsSync(destPath)) {
+                await fs.promises.rm(destPath, { recursive: true, force: true }).catch(() => { });
+            }
+
+            if (!this.useFallback) {
+                console.warn(`Native git clone failed for ${repoUrl}. Falling back to simple-git. Error: ${error}`);
+                TelemetryService.getInstance().sendError(error as Error, { context: 'git.clone', repoUrl });
+                this.useFallback = true;
+
+                // Recreate directory for fallback attempt
+                if (!fs.existsSync(destPath)) {
+                    await fs.promises.mkdir(destPath, { recursive: true });
+                }
+                await this.cloneFallback(repoUrl, destPath);
+            } else {
+                throw error;
+            }
         }
     }
 
     private async pull(destPath: string): Promise<void> {
+        this.removeGitLockFiles(destPath);
         try {
             if (!this.useFallback) {
                 await this.execCommand(`git fetch --depth 1`, destPath);
@@ -58,6 +113,30 @@ export class GitService {
             TelemetryService.getInstance().sendError(error as Error, { context: 'git.pull', destPath });
             this.useFallback = true;
             await this.pullFallback(destPath);
+        }
+    }
+
+    private isValidGitRepo(destPath: string): boolean {
+        try {
+            const headPath = path.join(destPath, '.git', 'HEAD');
+            return fs.existsSync(headPath);
+        } catch {
+            return false;
+        }
+    }
+
+    private removeGitLockFiles(destPath: string): void {
+        const lockFiles = ['index.lock', 'shallow.lock', 'HEAD.lock'];
+        for (const lockFile of lockFiles) {
+            const lockPath = path.join(destPath, '.git', lockFile);
+            try {
+                if (fs.existsSync(lockPath)) {
+                    fs.unlinkSync(lockPath);
+                    console.warn(`Removed stale git lock file: ${lockPath}`);
+                }
+            } catch (error) {
+                console.warn(`Failed to remove git lock file ${lockPath}: ${error}`);
+            }
         }
     }
 
