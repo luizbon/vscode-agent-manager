@@ -154,11 +154,6 @@
           "type": "number",
           "default": 7,
           "description": "Number of days to keep the agent cache before automatically refreshing."
-        },
-        "agentManager.enableTelemetry": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable telemetry collection for Agent Manager."
         }
       }
     }

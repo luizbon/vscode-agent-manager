@@ -62,27 +62,19 @@ suite('TelemetryService', () => {
     });
 
     suite('telemetry disabled', () => {
-        test('sendEvent does not log when telemetry is disabled', () => {
-            sandbox.stub(vscode.workspace, 'getConfiguration').returns({
-                get: (_key: string) => false,
-                has: sandbox.stub(),
-                inspect: sandbox.stub(),
-                update: sandbox.stub(),
-            } as unknown as vscode.WorkspaceConfiguration);
+        let envStub: sinon.SinonStub;
 
+        setup(() => {
+            envStub = sandbox.stub(vscode.env, 'isTelemetryEnabled').get(() => false);
+        });
+
+        test('sendEvent does not log when telemetry is disabled', () => {
             const service = TelemetryService.getInstance();
             service.sendEvent('test.event');
             assert.ok(appendLineStub.notCalled, 'appendLine should not be called when telemetry is disabled');
         });
 
         test('sendError does not log when telemetry is disabled', () => {
-            sandbox.stub(vscode.workspace, 'getConfiguration').returns({
-                get: (_key: string) => false,
-                has: sandbox.stub(),
-                inspect: sandbox.stub(),
-                update: sandbox.stub(),
-            } as unknown as vscode.WorkspaceConfiguration);
-
             const service = TelemetryService.getInstance();
             service.sendError(new Error('should not be logged'));
             assert.ok(appendLineStub.notCalled, 'appendLine should not be called when telemetry is disabled');

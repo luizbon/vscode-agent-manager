@@ -76,7 +76,7 @@ export class TelemetryService {
     }
 
     private get isEnabled(): boolean {
-        return vscode.workspace.getConfiguration('agentManager').get<boolean>('enableTelemetry') ?? true;
+        return vscode.env.isTelemetryEnabled;
     }
 
     public static getInstance(): TelemetryService {
