@@ -47,26 +47,6 @@ export function activate(context: vscode.ExtensionContext) {
   const telemetry = TelemetryService.getInstance();
   context.subscriptions.push(telemetry);
 
-  const hasAskedTelemetry = context.globalState.get<boolean>("agentManager.hasAskedTelemetry");
-  if (!hasAskedTelemetry) {
-    const enableTelemetry = "Enable Telemetry";
-    const disableTelemetry = "Disable Telemetry";
-    vscode.window
-      .showInformationMessage(
-        "Help improve Agent Manager by sending anonymous usage data?",
-        enableTelemetry,
-        disableTelemetry,
-      )
-      .then((selection) => {
-        if (selection === enableTelemetry) {
-          vscode.workspace.getConfiguration("agentManager").update("enableTelemetry", true, vscode.ConfigurationTarget.Global);
-        } else if (selection === disableTelemetry) {
-          vscode.workspace.getConfiguration("agentManager").update("enableTelemetry", false, vscode.ConfigurationTarget.Global);
-        }
-        context.globalState.update("agentManager.hasAskedTelemetry", true);
-      });
-  }
-
   telemetry.sendEvent("activate");
 
   const globalStoragePath = context.globalStorageUri.fsPath;
