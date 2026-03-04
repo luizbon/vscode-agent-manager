@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as https from 'https';
 import * as sinon from 'sinon';
-import { parseAiBody, transformEnvelope, createPostHogFetcher } from '../services/posthogFetcher';
+import { parseAiBody, transformEnvelope, createPostHogFetcher, parseStackTrace } from '../services/posthogFetcher';
 
 suite('PostHog Fetcher', () => {
     let sandbox: sinon.SinonSandbox;
@@ -12,6 +12,105 @@ suite('PostHog Fetcher', () => {
 
     teardown(() => {
         sandbox.restore();
+    });
+
+    // -----------------------------------------------------------------------
+    // parseStackTrace
+    // -----------------------------------------------------------------------
+    suite('parseStackTrace', () => {
+        test('returns empty array for undefined input', () => {
+            assert.deepStrictEqual(parseStackTrace(undefined), []);
+        });
+
+        test('returns empty array for empty string', () => {
+            assert.deepStrictEqual(parseStackTrace(''), []);
+        });
+
+        test('returns empty array for message-only stack (no frames)', () => {
+            assert.deepStrictEqual(parseStackTrace('Error: something went wrong'), []);
+        });
+
+        test('parses a multi-line V8 stack trace with named functions', () => {
+            const stack = [
+                'Error: test error',
+                '    at GitService.clone (/src/services/gitService.ts:70:15)',
+                '    at GitService.cloneOrPullRepo (/src/services/gitService.ts:58:18)',
+                '    at Object.<anonymous> (/src/test/runner.ts:10:5)',
+            ].join('\n');
+
+            const frames = parseStackTrace(stack);
+            assert.strictEqual(frames.length, 3);
+
+            assert.strictEqual(frames[0].function, 'GitService.clone');
+            assert.strictEqual(frames[0].filename, '/src/services/gitService.ts');
+            assert.strictEqual(frames[0].lineno, 70);
+            assert.strictEqual(frames[0].colno, 15);
+            assert.strictEqual(frames[0].platform, 'custom');
+            assert.strictEqual(frames[0].lang, 'javascript');
+            assert.strictEqual(frames[0].in_app, true);
+
+            assert.strictEqual(frames[2].function, 'Object.<anonymous>');
+        });
+
+        test('parses anonymous-form frames (at file:line:col)', () => {
+            const stack = [
+                'Error: boom',
+                '    at /src/extension.ts:27:3',
+            ].join('\n');
+
+            const frames = parseStackTrace(stack);
+            assert.strictEqual(frames.length, 1);
+            assert.strictEqual(frames[0].function, '<anonymous>');
+            assert.strictEqual(frames[0].filename, '/src/extension.ts');
+            assert.strictEqual(frames[0].lineno, 27);
+            assert.strictEqual(frames[0].colno, 3);
+        });
+
+        test('marks node_modules frames as not in_app', () => {
+            const stack = [
+                'Error: dep error',
+                '    at SomeLib.run (/proj/node_modules/some-lib/index.js:5:10)',
+            ].join('\n');
+
+            const frames = parseStackTrace(stack);
+            assert.strictEqual(frames.length, 1);
+            assert.strictEqual(frames[0].in_app, false);
+        });
+
+        test('handles new constructor invocations', () => {
+            const stack = [
+                'Error: ctor',
+                '    at new AgentInstaller (/src/agent/agentInstaller.ts:9:5)',
+            ].join('\n');
+
+            const frames = parseStackTrace(stack);
+            assert.strictEqual(frames.length, 1);
+            assert.strictEqual(frames[0].function, 'AgentInstaller');
+        });
+
+        test('handles async frames', () => {
+            const stack = [
+                'Error: async err',
+                '    at async GitService.pull (/src/services/gitService.ts:102:9)',
+            ].join('\n');
+
+            const frames = parseStackTrace(stack);
+            assert.strictEqual(frames.length, 1);
+            assert.strictEqual(frames[0].function, 'GitService.pull');
+            assert.strictEqual(frames[0].lineno, 102);
+        });
+
+        test('handles frames without column number', () => {
+            const stack = [
+                'Error: no col',
+                '    at process (/src/runner.ts:42)',
+            ].join('\n');
+
+            const frames = parseStackTrace(stack);
+            assert.strictEqual(frames.length, 1);
+            assert.strictEqual(frames[0].lineno, 42);
+            assert.strictEqual(frames[0].colno, undefined);
+        });
     });
 
     // -----------------------------------------------------------------------
@@ -75,7 +174,8 @@ suite('PostHog Fetcher', () => {
             assert.strictEqual(result!.properties['duration'], 42);
         });
 
-        test('maps ExceptionData envelope to a PostHog exception event', () => {
+        test('maps ExceptionData envelope to a $exception event with $exception_list', () => {
+            const stack = 'TypeError: Cannot read property foo\n  at foo (bar.ts:1:5)\n  at baz (qux.ts:10:3)';
             const envelope = {
                 baseType: 'ExceptionData',
                 baseData: {
@@ -83,14 +183,35 @@ suite('PostHog Fetcher', () => {
                         typeName: 'TypeError',
                         message: 'Cannot read property foo',
                         hasFullStack: true,
-                        stack: 'Error: ...\n  at foo (bar.ts:1)'
+                        stack
                     }],
                     properties: { context: 'git.clone' }
                 }
             };
             const result = transformEnvelope(envelope, API_KEY, DISTINCT_ID);
             assert.ok(result);
-            assert.strictEqual(result!.event, 'exception:TypeError');
+            // Event must be $exception per PostHog manual schema
+            assert.strictEqual(result!.event, '$exception');
+
+            // $exception_list must be present
+            const exceptionList = result!.properties['$exception_list'] as Array<{
+                type: string;
+                value: string;
+                mechanism: { handled: boolean; synthetic: boolean };
+                stacktrace: { type: string; frames: Array<Record<string, unknown>> };
+            }>;
+            assert.ok(Array.isArray(exceptionList), '$exception_list should be an array');
+            assert.strictEqual(exceptionList.length, 1);
+
+            const ex = exceptionList[0];
+            assert.strictEqual(ex.type, 'TypeError');
+            assert.strictEqual(ex.value, 'Cannot read property foo');
+            assert.deepStrictEqual(ex.mechanism, { handled: true, synthetic: false });
+            assert.strictEqual(ex.stacktrace.type, 'raw');
+            assert.ok(ex.stacktrace.frames.length >= 2, 'Should have parsed frames');
+            assert.strictEqual(ex.stacktrace.frames[0].function, 'foo');
+
+            // Backwards-compatible flat properties
             assert.strictEqual(result!.properties['$exception_type'], 'TypeError');
             assert.strictEqual(result!.properties['$exception_message'], 'Cannot read property foo');
             assert.ok(result!.properties['$exception_stack_trace_raw']);
@@ -113,6 +234,46 @@ suite('PostHog Fetcher', () => {
             assert.ok(result);
             assert.doesNotThrow(() => new Date(result!.timestamp));
             assert.ok(result!.timestamp.includes('T'));
+        });
+
+        test('attaches $set and $set_once when commonProperties provided', () => {
+            const commonProps = { 'common.os': 'darwin', 'common.arch': 'arm64' };
+            const result = transformEnvelope({}, API_KEY, DISTINCT_ID, commonProps);
+            assert.ok(result);
+            assert.deepStrictEqual(result!.properties['$set'], commonProps);
+            assert.deepStrictEqual(result!.properties['$set_once'], commonProps);
+        });
+
+        test('does not attach $set/$set_once when commonProperties is empty', () => {
+            const result = transformEnvelope({}, API_KEY, DISTINCT_ID, {});
+            assert.ok(result);
+            assert.strictEqual(result!.properties['$set'], undefined);
+            assert.strictEqual(result!.properties['$set_once'], undefined);
+        });
+
+        test('does not attach $set/$set_once when commonProperties is undefined', () => {
+            const result = transformEnvelope({}, API_KEY, DISTINCT_ID);
+            assert.ok(result);
+            assert.strictEqual(result!.properties['$set'], undefined);
+        });
+
+        test('handles exception without stack trace gracefully', () => {
+            const envelope = {
+                baseType: 'ExceptionData',
+                baseData: {
+                    exceptions: [{
+                        typeName: 'Error',
+                        message: 'no stack'
+                    }]
+                }
+            };
+            const result = transformEnvelope(envelope, API_KEY, DISTINCT_ID);
+            assert.ok(result);
+            assert.strictEqual(result!.event, '$exception');
+            const exceptionList = result!.properties['$exception_list'] as Array<Record<string, unknown>>;
+            assert.strictEqual(exceptionList.length, 1);
+            const ex = exceptionList[0] as { stacktrace: { frames: unknown[] } };
+            assert.deepStrictEqual(ex.stacktrace.frames, []);
         });
     });
 
@@ -167,6 +328,21 @@ suite('PostHog Fetcher', () => {
             assert.strictEqual(sentBody.event, 'test.event');
             assert.strictEqual(sentBody.api_key, API_KEY);
             assert.strictEqual(sentBody.distinct_id, DISTINCT_ID);
+        });
+
+        test('includes $set/$set_once when commonProperties supplied', async () => {
+            const { fakeReq } = stubHttpsRequest();
+            const commonProps = { 'common.os': 'linux' };
+
+            const fetcher = createPostHogFetcher(API_KEY, HOST, DISTINCT_ID, commonProps);
+            const body = JSON.stringify([
+                { baseType: 'EventData', baseData: { name: 'evt', properties: {} } }
+            ]);
+
+            await fetcher('https://ignored', { method: 'POST', body });
+            const sentBody = JSON.parse(fakeReq.write.firstCall.args[0]);
+            assert.deepStrictEqual(sentBody.properties['$set'], commonProps);
+            assert.deepStrictEqual(sentBody.properties['$set_once'], commonProps);
         });
 
         test('returns 200 even when PostHog request fails', async () => {

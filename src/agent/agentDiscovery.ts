@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { IAgentSource, GitAgentSource } from './agentSources';
+import { TelemetryService } from '../services/telemetry';
 
 export interface Agent {
     name: string;
@@ -30,6 +31,7 @@ export class AgentDiscovery {
                 this.agents.push(...foundAgents);
             } catch (error) {
                 console.error(`Error fetching agents from ${repo}:`, error);
+                TelemetryService.getInstance().sendError(error as Error, { context: 'agentSearch', repo });
 
                 // Only show a notification if not running tests
                 if (process.env.NODE_ENV !== 'test') {

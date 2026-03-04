@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { Agent } from './agentDiscovery';
 import { GitService } from '../services/gitService';
+import { TelemetryService } from '../services/telemetry';
 
 export class AgentInstaller {
     constructor(private context: vscode.ExtensionContext) { }
@@ -46,6 +47,7 @@ export class AgentInstaller {
             currentSha = await gitService.getHeadSha(repoRoot);
             relativePath = path.relative(repoRoot, agent.installUrl);
         } catch (e) {
+            TelemetryService.getInstance().sendError(e as Error, { context: 'agentInstall.gitDetails', agent: agent.name });
             vscode.window.showErrorMessage(`Failed to determine git details for agent: ${e}`);
             return;
         }
@@ -144,6 +146,7 @@ export class AgentInstaller {
                 await vscode.window.showTextDocument(doc);
                 return;
             } catch (error) {
+                TelemetryService.getInstance().sendError(error as Error, { context: 'agentInstall.update', agent: agent.name });
                 vscode.window.showErrorMessage(`Failed to update agent: ${error}`);
                 return;
             }
@@ -217,6 +220,7 @@ export class AgentInstaller {
             await vscode.window.showTextDocument(doc);
 
         } catch (error) {
+            TelemetryService.getInstance().sendError(error as Error, { context: 'agentInstall.copy', agent: agent.name });
             vscode.window.showErrorMessage(`Failed to install agent: ${error}`);
         }
     }

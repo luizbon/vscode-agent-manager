@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { Agent } from './agentDiscovery';
 import { AgentParser } from './agentParser';
 import { GitService } from '../services/gitService';
+import { TelemetryService } from '../services/telemetry';
 
 export interface IAgentSource {
     fetchAgents(sourceUrl: string, globalStorageUri: vscode.Uri): Promise<Agent[]>;
@@ -30,6 +31,7 @@ export class GitAgentSource implements IAgentSource {
                 }
             } catch (error) {
                 console.error(`Failed to parse agent ${filePath}:`, error);
+                TelemetryService.getInstance().sendError(error as Error, { context: 'agentParse', filePath });
             }
         }
 
@@ -53,6 +55,7 @@ export class GitAgentSource implements IAgentSource {
             }
         } catch (error) {
             console.error(`Error reading directory ${dir}:`, error);
+            TelemetryService.getInstance().sendError(error as Error, { context: 'agentFileDiscovery', dir });
         }
         return results;
     }
