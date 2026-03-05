@@ -157,11 +157,13 @@ suite('PostHog Fetcher', () => {
 
         test('maps EventData envelope to a PostHog event', () => {
             const envelope = {
-                baseType: 'EventData',
-                baseData: {
-                    name: 'agent.install',
-                    properties: { 'common.os': 'linux', agentName: 'my-agent' },
-                    measurements: { duration: 42 }
+                data: {
+                    baseType: 'EventData',
+                    baseData: {
+                        name: 'agent.install',
+                        properties: { 'common.os': 'linux', agentName: 'my-agent' },
+                        measurements: { duration: 42 }
+                    }
                 }
             };
             const result = transformEnvelope(envelope, API_KEY, DISTINCT_ID);
@@ -177,15 +179,17 @@ suite('PostHog Fetcher', () => {
         test('maps ExceptionData envelope to a $exception event with $exception_list', () => {
             const stack = 'TypeError: Cannot read property foo\n  at foo (bar.ts:1:5)\n  at baz (qux.ts:10:3)';
             const envelope = {
-                baseType: 'ExceptionData',
-                baseData: {
-                    exceptions: [{
-                        typeName: 'TypeError',
-                        message: 'Cannot read property foo',
-                        hasFullStack: true,
-                        stack
-                    }],
-                    properties: { context: 'git.clone' }
+                data: {
+                    baseType: 'ExceptionData',
+                    baseData: {
+                        exceptions: [{
+                            typeName: 'TypeError',
+                            message: 'Cannot read property foo',
+                            hasFullStack: true,
+                            stack
+                        }],
+                        properties: { context: 'git.clone' }
+                    }
                 }
             };
             const result = transformEnvelope(envelope, API_KEY, DISTINCT_ID);
@@ -218,8 +222,47 @@ suite('PostHog Fetcher', () => {
             assert.strictEqual(result!.properties['context'], 'git.clone');
         });
 
+        test('maps non-ExceptionData envelope with $exception_type to a $exception event', () => {
+            const stack = 'Error: some error\n  at something (file.ts:1:1)';
+            const envelope = {
+                data: {
+                    baseType: 'EventData',
+                    baseData: {
+                        name: 'error/myContext',
+                        properties: {
+                            context: 'myContext',
+                            message: 'some error',
+                            stack: stack,
+                            '$exception_type': 'CustomError'
+                        }
+                    }
+                }
+            };
+            const result = transformEnvelope(envelope, API_KEY, DISTINCT_ID);
+            assert.ok(result);
+            assert.strictEqual(result!.event, '$exception');
+
+            // Should preserve original event name
+            assert.strictEqual(result!.properties['error_context_name'], 'error/myContext');
+
+            // $exception_list must be built
+            const exceptionList = result!.properties['$exception_list'] as Array<any>;
+            assert.ok(Array.isArray(exceptionList), '$exception_list should be an array');
+            assert.strictEqual(exceptionList.length, 1);
+
+            const ex = exceptionList[0];
+            assert.strictEqual(ex.type, 'CustomError');
+            assert.strictEqual(ex.value, 'some error');
+            assert.strictEqual(ex.stacktrace.type, 'raw');
+
+            // Flat properties
+            assert.strictEqual(result!.properties['$exception_message'], 'some error');
+            assert.strictEqual(result!.properties['$exception_stack_trace_raw'], stack);
+            assert.strictEqual(result!.properties['context'], 'myContext');
+        });
+
         test('falls back to envelope.name when baseData.name is missing', () => {
-            const envelope = { name: 'fallback.event', baseType: 'EventData', baseData: {} };
+            const envelope = { name: 'fallback.event', data: { baseType: 'EventData', baseData: {} } };
             const result = transformEnvelope(envelope, API_KEY, DISTINCT_ID);
             assert.strictEqual(result!.event, 'fallback.event');
         });
@@ -259,12 +302,14 @@ suite('PostHog Fetcher', () => {
 
         test('handles exception without stack trace gracefully', () => {
             const envelope = {
-                baseType: 'ExceptionData',
-                baseData: {
-                    exceptions: [{
-                        typeName: 'Error',
-                        message: 'no stack'
-                    }]
+                data: {
+                    baseType: 'ExceptionData',
+                    baseData: {
+                        exceptions: [{
+                            typeName: 'Error',
+                            message: 'no stack'
+                        }]
+                    }
                 }
             };
             const result = transformEnvelope(envelope, API_KEY, DISTINCT_ID);
@@ -315,7 +360,7 @@ suite('PostHog Fetcher', () => {
 
             const fetcher = createPostHogFetcher(API_KEY, HOST, DISTINCT_ID);
             const body = JSON.stringify([
-                { baseType: 'EventData', baseData: { name: 'test.event', properties: {}, measurements: {} } }
+                { data: { baseType: 'EventData', baseData: { name: 'test.event', properties: {}, measurements: {} } } }
             ]);
 
             const response = await fetcher('https://ignored-by-fetcher', { method: 'POST', body });
@@ -336,7 +381,7 @@ suite('PostHog Fetcher', () => {
 
             const fetcher = createPostHogFetcher(API_KEY, HOST, DISTINCT_ID, commonProps);
             const body = JSON.stringify([
-                { baseType: 'EventData', baseData: { name: 'evt', properties: {} } }
+                { data: { baseType: 'EventData', baseData: { name: 'evt', properties: {} } } }
             ]);
 
             await fetcher('https://ignored', { method: 'POST', body });
@@ -357,7 +402,7 @@ suite('PostHog Fetcher', () => {
             sandbox.stub(https, 'request').returns(fakeReq as any);
 
             const fetcher = createPostHogFetcher(API_KEY, HOST, DISTINCT_ID);
-            const body = JSON.stringify([{ baseType: 'EventData', baseData: { name: 'evt' } }]);
+            const body = JSON.stringify([{ data: { baseType: 'EventData', baseData: { name: 'evt' } } }]);
 
             const response = await fetcher('https://ignored', { method: 'POST', body });
             assert.strictEqual(response.status, 200);

@@ -20,8 +20,11 @@
 
 ## 🚀 Features
 
-### 🔍 Auto-Discovery
-Stop manually hunting for agent configurations. Point the Agent Manager to any GitHub repository (like the popular `awesome-copilot` lists), and it will automatically index all available agents.
+### 🔍 Auto-Discovery from any Git Repo
+Stop manually hunting for configurations. Point the Agent Manager to **any GitHub repository** (like the popular `awesome-copilot` lists or your own team's private repo), and it will automatically index all available items. It recursively scans the repository looking for `.agent.md`, `.skill.md`, or `SKILL.md` files, parsing their YAML frontmatter or HTML comments to extract descriptions, authors, and tags.
+
+### 🧠 Skills Management
+In addition to agents, the extension supports the discovery and management of **Skills**. A skill is a reusable set of instructions or context that can be attached to agents. The extension automatically discovers skills in your configured repositories and allows you to install and manage them alongside your agents.
 
 ### 📦 One-Click Installation
 Install agents in seconds. Choose to install them globally (User Profile) for access in all projects, or locally (Workspace) for project-specific needs.
@@ -29,8 +32,11 @@ Install agents in seconds. Choose to install them globally (User Profile) for ac
 ### 🔄 Smart Updates & Version Control
 Stay up to date. The extension tracks installed versions against the remote source, alerting you when updates are available. View changelogs and author details at a glance.
 
-### 🛡️ Git-Powered Reliability
-Built on top of Git, ensuring that you always get the exact version of the agent you expect, with verified author and commit data.
+### 🛡️ Git-Powered Reliability & Robustness
+Built on top of Git, ensuring that you always get the exact version of the agent you expect. The extension features highly robust Git integration with built-in safeguards (like semaphores) to prevent concurrent operations and ensure stable performance even when working with large repositories.
+
+### 📊 Telemetry & Insights
+Includes privacy-respecting telemetry (opt-in based on your overall VS Code settings) using PostHog and Application Insights. This helps us continuously improve the extension by understanding how features are used and quickly identifying any issues in the wild.
 
 ---
 

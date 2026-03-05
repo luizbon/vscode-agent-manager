@@ -19,6 +19,20 @@ interface AiEnvelope {
             stack?: string;
         }>;
     };
+    data?: {
+        baseType?: string;
+        baseData?: {
+            name?: string;
+            properties?: Record<string, string>;
+            measurements?: Record<string, number>;
+            exceptions?: Array<{
+                typeName?: string;
+                message?: string;
+                hasFullStack?: boolean;
+                stack?: string;
+            }>;
+        };
+    };
 }
 
 /**
@@ -188,12 +202,15 @@ export function transformEnvelope(
     distinctId: string,
     commonProperties?: Record<string, string>
 ): PostHogEvent | null {
-    const baseData = envelope.baseData;
-    const isException = envelope.baseType === 'ExceptionData';
+    // VS Code Extension Telemetry passes envelopes with baseData wrapped in a `data` object.
+    const dataObj = envelope.data || envelope;
+    const baseData = dataObj.baseData;
+    const isExceptionEnvelope = dataObj.baseType === 'ExceptionData';
+    const isErrorEvent = isExceptionEnvelope || (baseData?.properties && '$exception_type' in baseData.properties);
 
     // Derive a meaningful event name
     let eventName: string;
-    if (isException) {
+    if (isErrorEvent) {
         eventName = '$exception';
     } else {
         eventName = baseData?.name ?? envelope.name ?? 'telemetry';
@@ -203,6 +220,11 @@ export function transformEnvelope(
         ...(baseData?.properties ?? {})
     };
 
+    // If we re-mapped a regular telemetry event to $exception, save the original event name
+    if (isErrorEvent && !isExceptionEnvelope) {
+        properties['error_context_name'] = baseData?.name ?? envelope.name ?? 'error';
+    }
+
     // Merge measurements into properties with a numeric type (PostHog accepts mixed types)
     if (baseData?.measurements) {
         for (const [key, value] of Object.entries(baseData.measurements)) {
@@ -211,12 +233,42 @@ export function transformEnvelope(
     }
 
     // Build $exception_list per PostHog manual error tracking schema
-    if (isException && baseData?.exceptions?.length) {
-        const exceptionList = baseData.exceptions.map(ex => {
-            const frames = parseStackTrace(ex.stack);
-            return {
-                type: ex.typeName ?? 'Error',
-                value: ex.message ?? '',
+    if (isErrorEvent) {
+        if (isExceptionEnvelope && baseData?.exceptions?.length) {
+            const exceptionList = baseData.exceptions.map(ex => {
+                const frames = parseStackTrace(ex.stack);
+                return {
+                    type: ex.typeName ?? 'Error',
+                    value: ex.message ?? '',
+                    mechanism: {
+                        handled: true,
+                        synthetic: false,
+                    },
+                    stacktrace: {
+                        type: 'raw' as const,
+                        frames,
+                    },
+                };
+            });
+
+            properties['$exception_list'] = exceptionList;
+
+            // Keep flat properties for backwards compatibility and PostHog search
+            const firstEx = baseData.exceptions[0];
+            properties['$exception_type'] = firstEx.typeName ?? '';
+            properties['$exception_message'] = firstEx.message ?? '';
+            if (firstEx.stack) {
+                properties['$exception_stack_trace_raw'] = firstEx.stack;
+            }
+        } else if (baseData?.properties?.['$exception_type']) {
+            const typeName = baseData.properties['$exception_type'];
+            const message = baseData.properties['message'] || '';
+            const stack = baseData.properties['stack'] || '';
+
+            const frames = parseStackTrace(stack);
+            const exceptionList = [{
+                type: typeName,
+                value: message,
                 mechanism: {
                     handled: true,
                     synthetic: false,
@@ -225,17 +277,13 @@ export function transformEnvelope(
                     type: 'raw' as const,
                     frames,
                 },
-            };
-        });
+            }];
 
-        properties['$exception_list'] = exceptionList;
-
-        // Keep flat properties for backwards compatibility and PostHog search
-        const firstEx = baseData.exceptions[0];
-        properties['$exception_type'] = firstEx.typeName ?? '';
-        properties['$exception_message'] = firstEx.message ?? '';
-        if (firstEx.stack) {
-            properties['$exception_stack_trace_raw'] = firstEx.stack;
+            properties['$exception_list'] = exceptionList;
+            properties['$exception_message'] = message;
+            if (stack) {
+                properties['$exception_stack_trace_raw'] = stack;
+            }
         }
     }
 
