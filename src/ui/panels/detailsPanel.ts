@@ -94,9 +94,13 @@ export class DetailsPanel {
                             const content = await this.fetchUrl(this._item.installUrl);
                             this._panel.webview.postMessage({ command: 'updateContent', content });
                         } catch (e: any) {
-                            TelemetryService.getInstance().sendError(e as Error, { context: 'fetchContent', item: this._item.name });
+                            const isNotFoundError = e.message && (e.message.includes('File not found') || e.code === 'ENOENT');
 
-                            const friendlyError = e.message && e.message.includes('File not found')
+                            if (!isNotFoundError) {
+                                TelemetryService.getInstance().sendError(e as Error, { context: 'fetchContent', item: this._item.name });
+                            }
+
+                            const friendlyError = isNotFoundError
                                 ? 'Content is not yet available locally. Please try installing or updating this item.'
                                 : 'Failed to load content: ' + e.message;
 

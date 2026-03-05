@@ -126,6 +126,30 @@ export class TelemetryService {
         this.posthogReporter?.sendTelemetryErrorEvent(eventName, props, measurements);
     }
 
+    public async traceOperation<T>(
+        operationName: string,
+        operation: () => Promise<T>,
+        properties?: { [key: string]: string }
+    ): Promise<T> {
+        const traceId = Math.random().toString(36).substring(2, 15);
+        const startProps = { ...properties, traceId };
+
+        this.sendEvent(`${operationName}.start`, startProps);
+        const startTime = Date.now();
+
+        try {
+            const result = await operation();
+            const durationMs = Date.now() - startTime;
+            this.sendEvent(`${operationName}.success`, startProps, { durationMs });
+            return result;
+        } catch (error) {
+            const durationMs = Date.now() - startTime;
+            const errorProps = { context: operationName, ...startProps };
+            this.sendError(error instanceof Error ? error : new Error(String(error)), errorProps, { durationMs });
+            throw error;
+        }
+    }
+
     /**
      * Send a structured exception event directly to PostHog following the
      * manual error tracking schema (https://posthog.com/docs/error-tracking/installation/manual).

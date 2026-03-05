@@ -75,6 +75,48 @@ suite('TelemetryService', () => {
             const logLine = appendLineStub.firstCall.args[0] as string;
             assert.ok(logLine.includes('TypeError'), 'Log should contain exception type');
         });
+
+        test('traceOperation logs start and success', async () => {
+            const service = TelemetryService.getInstance();
+            const result = await service.traceOperation('test.op', async () => 'ok', { extra: 'data' });
+
+            assert.strictEqual(result, 'ok');
+            assert.strictEqual(appendLineStub.callCount, 2);
+
+            const startLog = appendLineStub.firstCall.args[0] as string;
+            const successLog = appendLineStub.secondCall.args[0] as string;
+
+            assert.ok(startLog.includes('[Event] test.op.start'));
+            assert.ok(startLog.includes('traceId'));
+            assert.ok(startLog.includes('data'));
+
+            assert.ok(successLog.includes('[Event] test.op.success'));
+            assert.ok(successLog.includes('traceId'));
+            assert.ok(successLog.includes('durationMs'));
+        });
+
+        test('traceOperation logs start and error on failure', async () => {
+            const service = TelemetryService.getInstance();
+            let errorThrown = false;
+
+            try {
+                await service.traceOperation('test.fail', async () => { throw new Error('op failed'); }, { extra: 'data' });
+            } catch (e) {
+                errorThrown = true;
+                assert.strictEqual((e as Error).message, 'op failed');
+            }
+
+            assert.ok(errorThrown);
+            assert.strictEqual(appendLineStub.callCount, 2);
+
+            const startLog = appendLineStub.firstCall.args[0] as string;
+            const errorLog = appendLineStub.secondCall.args[0] as string;
+
+            assert.ok(startLog.includes('[Event] test.fail.start'));
+            assert.ok(errorLog.includes('[Error] op failed'));
+            assert.ok(errorLog.includes('traceId'));
+            assert.ok(errorLog.includes('durationMs'));
+        });
     });
 
     suite('captureException', () => {

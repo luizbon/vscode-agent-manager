@@ -114,62 +114,61 @@ export function activate(context: vscode.ExtensionContext) {
     "marketplace.search",
     async (force: boolean = false) => {
       treeView.message = "Refreshing items...";
-      telemetry.sendEvent("search.start", { force: force.toString() });
 
-      const config = vscode.workspace.getConfiguration("agentManager");
-      const repositories = config.get<string[]>("repositories") || [];
+      await telemetry.traceOperation("search", async () => {
+        const config = vscode.workspace.getConfiguration("agentManager");
+        const repositories = config.get<string[]>("repositories") || [];
 
-      treeProvider.prune(repositories);
-      await refreshInstalledItems();
+        treeProvider.prune(repositories);
+        await refreshInstalledItems();
 
-      if (repositories.length === 0) {
-        vscode.window.showWarningMessage("No repositories configured.");
-        treeView.message = "No repositories configured.";
-        treeProvider.clear();
-        webviewProvider.updateItems({ agents: [], skills: [] });
-        return;
-      }
+        if (repositories.length === 0) {
+          vscode.window.showWarningMessage("No repositories configured.");
+          treeView.message = "No repositories configured.";
+          treeProvider.clear();
+          webviewProvider.updateItems({ agents: [], skills: [] });
+          return;
+        }
 
-      let reposToFetch = force ? repositories : repositories.filter(repo => !treeProvider.isCacheValid(repo));
+        let reposToFetch = force ? repositories : repositories.filter(repo => !treeProvider.isCacheValid(repo));
 
-      if (reposToFetch.length === 0) {
-        const allCached = treeProvider.getAllCachedItems();
-        webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
-        treeView.message = undefined;
-        return;
-      }
+        if (reposToFetch.length === 0) {
+          const allCached = treeProvider.getAllCachedItems();
+          webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
+          treeView.message = undefined;
+          return;
+        }
 
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: "Searching for items...", cancellable: false },
-        async (progress) => {
-          let totalItems = 0;
-          for (const repo of reposToFetch) {
-            progress.report({ message: `Fetching from ${repo}...` });
-            try {
-              const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource);
-              if (fetched.agents.length > 0 || fetched.skills.length > 0) {
-                treeProvider.addItems(repo, fetched.agents, fetched.skills);
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: "Searching for items...", cancellable: false },
+          async (progress) => {
+            let totalItems = 0;
+            for (const repo of reposToFetch) {
+              progress.report({ message: `Fetching from ${repo}...` });
+              try {
+                const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource);
+                if (fetched.agents.length > 0 || fetched.skills.length > 0) {
+                  treeProvider.addItems(repo, fetched.agents, fetched.skills);
+                }
+              } catch (error) {
+                console.error(`Error searching ${repo}:`, error);
+                telemetry.sendError(error as Error, { context: "search", repo });
               }
-            } catch (error) {
-              console.error(`Error searching ${repo}:`, error);
-              telemetry.sendError(error as Error, { context: "search", repo });
+            }
+
+            const allCached = treeProvider.getAllCachedItems();
+            totalItems = allCached.agents.length + allCached.skills.length;
+
+            webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
+
+            if (totalItems === 0 && repositories.length > 0 && treeProvider.isEmpty) {
+              treeView.message = "No items found.";
+            } else {
+              treeView.message = undefined;
             }
           }
-
-          const allCached = treeProvider.getAllCachedItems();
-          totalItems = allCached.agents.length + allCached.skills.length;
-
-          webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
-
-          if (totalItems === 0 && repositories.length > 0 && treeProvider.isEmpty) {
-            treeView.message = "No items found.";
-          } else {
-            treeView.message = undefined;
-          }
-
-          telemetry.sendEvent("search.complete", { itemCount: totalItems.toString() });
-        }
-      );
+        );
+      }, { force: force.toString() });
     }
   );
 
@@ -181,15 +180,13 @@ export function activate(context: vscode.ExtensionContext) {
         await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: `Refreshing ${uiItem.label}...`, cancellable: false },
           async () => {
-            try {
+            await telemetry.traceOperation("refreshSource", async () => {
               const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource);
               treeProvider.addItems(repo, fetched.agents, fetched.skills);
               webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
-              telemetry.sendEvent("refreshSource.success", { repo });
-            } catch (error) {
-              telemetry.sendError(error as Error, { context: "refreshSource", repo });
+            }, { repo }).catch(error => {
               vscode.window.showErrorMessage(`Failed to refresh ${uiItem.label}: ${error}`);
-            }
+            });
           }
         );
       }
@@ -202,75 +199,73 @@ export function activate(context: vscode.ExtensionContext) {
       const item = extractItem(uiItem);
       if (item) {
         try {
-          telemetry.sendEvent("install.start", { item: item.name });
+          await telemetry.traceOperation("install", async () => {
+            const installOptions: vscode.QuickPickItem[] = [];
+            if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+              const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+              const config = vscode.workspace.getConfiguration('chat');
+              const settingName = item.type === 'agent' ? 'agentFilesLocations' : 'agentSkillsLocations';
+              const configLocations = config.get<string[]>(settingName);
 
-          const installOptions: vscode.QuickPickItem[] = [];
-          if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-            const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
-            const config = vscode.workspace.getConfiguration('chat');
-            const settingName = item.type === 'agent' ? 'agentFilesLocations' : 'agentSkillsLocations';
-            const configLocations = config.get<string[]>(settingName);
+              let locations: string[] = [];
+              if (Array.isArray(configLocations)) { locations = [...configLocations]; }
 
-            let locations: string[] = [];
-            if (Array.isArray(configLocations)) { locations = [...configLocations]; }
-
-            if (locations.length > 0) {
-              for (const loc of locations) {
+              if (locations.length > 0) {
+                for (const loc of locations) {
+                  installOptions.push({
+                    label: `Install to Workspace (${loc})`,
+                    description: path.isAbsolute(loc) ? loc : path.join(workspaceRoot, loc)
+                  });
+                }
+              } else {
+                const defaultLoc = item.type === 'agent' ? '.github/agents' : '.github/skills';
                 installOptions.push({
-                  label: `Install to Workspace (${loc})`,
-                  description: path.isAbsolute(loc) ? loc : path.join(workspaceRoot, loc)
+                  label: `Install to Workspace (${defaultLoc})`,
+                  description: path.join(workspaceRoot, defaultLoc)
                 });
               }
-            } else {
-              const defaultLoc = item.type === 'agent' ? '.github/agents' : '.github/skills';
+            }
+
+            if (item.type === 'agent') {
               installOptions.push({
-                label: `Install to Workspace (${defaultLoc})`,
-                description: path.join(workspaceRoot, defaultLoc)
+                label: 'Install to User Profile (prompts)',
+                description: userPath
+              });
+            } else {
+              installOptions.push({
+                label: 'Install to Global Skills (~/.copilot/skills)',
+                description: globalSkillPath
               });
             }
-          }
 
-          if (item.type === 'agent') {
-            installOptions.push({
-              label: 'Install to User Profile (prompts)',
-              description: userPath
-            });
-          } else {
-            installOptions.push({
-              label: 'Install to Global Skills (~/.copilot/skills)',
-              description: globalSkillPath
-            });
-          }
+            const selection = await vscode.window.showQuickPick(installOptions, { placeHolder: `Where do you want to install ${item.name}?` });
 
-          const selection = await vscode.window.showQuickPick(installOptions, { placeHolder: `Where do you want to install ${item.name}?` });
+            if (selection && selection.description) {
+              const installBasePath = selection.description;
+              await installerService.installItem(item, installBasePath);
+              vscode.window.showInformationMessage(`${item.type === 'agent' ? 'Agent' : 'Skill'} ${item.name} installed successfully.`);
 
-          if (selection && selection.description) {
-            const installBasePath = selection.description;
-            await installerService.installItem(item, installBasePath);
-            vscode.window.showInformationMessage(`${item.type === 'agent' ? 'Agent' : 'Skill'} ${item.name} installed successfully.`);
+              // Always refresh the UI first, regardless of whether we can open the file
+              await refreshInstalledItems();
+              webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
 
-            // Always refresh the UI first, regardless of whether we can open the file
-            await refreshInstalledItems();
-            webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
-            telemetry.sendEvent("install.success", { item: item.name });
-
-            // Try to open the installed file in the editor
-            try {
-              const fileName = path.basename(item.path);
-              let finalFileDir = installBasePath;
-              if (item.baseDirectory) {
-                finalFileDir = path.join(installBasePath, item.baseDirectory);
+              // Try to open the installed file in the editor
+              try {
+                const fileName = path.basename(item.path);
+                let finalFileDir = installBasePath;
+                if (item.baseDirectory) {
+                  finalFileDir = path.join(installBasePath, item.baseDirectory);
+                }
+                const finalFilePath = path.join(finalFileDir, fileName);
+                const doc = await vscode.workspace.openTextDocument(finalFilePath);
+                await vscode.window.showTextDocument(doc);
+              } catch (openErr) {
+                // Non-fatal: the file was installed, we just couldn't open it
+                console.warn(`Could not open installed file in editor: ${openErr}`);
               }
-              const finalFilePath = path.join(finalFileDir, fileName);
-              const doc = await vscode.workspace.openTextDocument(finalFilePath);
-              await vscode.window.showTextDocument(doc);
-            } catch (openErr) {
-              // Non-fatal: the file was installed, we just couldn't open it
-              console.warn(`Could not open installed file in editor: ${openErr}`);
             }
-          }
+          }, { item: item.name });
         } catch (error) {
-          telemetry.sendError(error as Error, { context: "install", item: item?.name || 'unknown' });
           vscode.window.showErrorMessage(`Failed to install item: ${error}`);
         }
       } else {
@@ -285,21 +280,20 @@ export function activate(context: vscode.ExtensionContext) {
       const item = extractItem(uiItem);
       if (item && uiItem.updateItem) {
         try {
-          telemetry.sendEvent("update.start", { item: item.name });
-          const status = await installerService.updateItem(uiItem.updateItem as IMarketplaceItem, item.path);
+          await telemetry.traceOperation("update", async () => {
+            const status = await installerService.updateItem(uiItem.updateItem as IMarketplaceItem, item.path);
 
-          if (status === 'updated') {
-            vscode.window.showInformationMessage(`${item.type === 'agent' ? 'Agent' : 'Skill'} ${item.name} updated successfully.`);
-            const doc = await vscode.workspace.openTextDocument(item.path);
-            await vscode.window.showTextDocument(doc);
-          } else if (status === 'cancelled') {
-            vscode.window.showInformationMessage('Update cancelled.');
-          }
+            if (status === 'updated') {
+              vscode.window.showInformationMessage(`${item.type === 'agent' ? 'Agent' : 'Skill'} ${item.name} updated successfully.`);
+              const doc = await vscode.workspace.openTextDocument(item.path);
+              await vscode.window.showTextDocument(doc);
+            } else if (status === 'cancelled') {
+              vscode.window.showInformationMessage('Update cancelled.');
+            }
 
-          await refreshInstalledItems();
-          telemetry.sendEvent("update.success", { item: item.name });
+            await refreshInstalledItems();
+          }, { item: item.name });
         } catch (error) {
-          telemetry.sendError(error as Error, { context: "update", item: item.name });
           vscode.window.showErrorMessage(`Failed to update item: ${error}`);
         }
       }
@@ -323,44 +317,42 @@ export function activate(context: vscode.ExtensionContext) {
 
         if (confirm === "Uninstall") {
           try {
-            telemetry.sendEvent("uninstall.start", { item: item.name });
-
-            if (item.type === 'skill') {
-              const parentDir = path.dirname(installed.path);
-              // Treat skill directories as packages - delete the whole folder,
-              // UNLESS the skill is installed directly in a root skills dir (no subdirectory)
-              const skillRootDirs = [
-                path.join(os.homedir(), '.copilot', 'skills'),
-              ];
-              if (vscode.workspace.workspaceFolders) {
-                const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
-                const config = vscode.workspace.getConfiguration('chat');
-                const skillSetting = config.get<string[]>('agentSkillsLocations') || [];
-                const skillPaths = skillSetting.length > 0 ? skillSetting : ['.github/skills'];
-                for (const loc of skillPaths) {
-                  skillRootDirs.push(path.isAbsolute(loc) ? loc : path.join(workspaceRoot, loc));
+            await telemetry.traceOperation("uninstall", async () => {
+              if (item.type === 'skill') {
+                const parentDir = path.dirname(installed.path);
+                // Treat skill directories as packages - delete the whole folder,
+                // UNLESS the skill is installed directly in a root skills dir (no subdirectory)
+                const skillRootDirs = [
+                  path.join(os.homedir(), '.copilot', 'skills'),
+                ];
+                if (vscode.workspace.workspaceFolders) {
+                  const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+                  const config = vscode.workspace.getConfiguration('chat');
+                  const skillSetting = config.get<string[]>('agentSkillsLocations') || [];
+                  const skillPaths = skillSetting.length > 0 ? skillSetting : ['.github/skills'];
+                  for (const loc of skillPaths) {
+                    skillRootDirs.push(path.isAbsolute(loc) ? loc : path.join(workspaceRoot, loc));
+                  }
                 }
-              }
 
-              const isRootDir = skillRootDirs.some(r => path.resolve(parentDir) === path.resolve(r));
-              if (isRootDir) {
-                // Flat install - just delete the file
-                await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
+                const isRootDir = skillRootDirs.some(r => path.resolve(parentDir) === path.resolve(r));
+                if (isRootDir) {
+                  // Flat install - just delete the file
+                  await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
+                } else {
+                  // Packaged install - delete the whole skill directory
+                  await vscode.workspace.fs.delete(vscode.Uri.file(parentDir), { recursive: true });
+                }
               } else {
-                // Packaged install - delete the whole skill directory
-                await vscode.workspace.fs.delete(vscode.Uri.file(parentDir), { recursive: true });
+                await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
               }
-            } else {
-              await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
-            }
 
-            vscode.window.showInformationMessage(`Uninstalled ${item.name}`);
+              vscode.window.showInformationMessage(`Uninstalled ${item.name}`);
 
-            await refreshInstalledItems();
-            webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
-            telemetry.sendEvent("uninstall.success", { item: item.name });
+              await refreshInstalledItems();
+              webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
+            }, { item: item.name });
           } catch (error) {
-            telemetry.sendError(error as Error, { context: "uninstall", item: item.name });
             vscode.window.showErrorMessage(`Failed to uninstall: ${error}`);
           }
         }
