@@ -7,7 +7,7 @@ import { TelemetryService } from './telemetry';
 
 export class GitService {
     private useFallback = false;
-    private readonly pathLocks = new Map<string, Promise<void>>();
+    private static readonly pathLocks = new Map<string, Promise<void>>();
 
     private normalisePath(p: string): string {
         return path.resolve(p).toLowerCase();
@@ -15,13 +15,13 @@ export class GitService {
 
     private async withPathLock<T>(destPath: string, operation: () => Promise<T>): Promise<T> {
         const key = this.normalisePath(destPath);
-        const previous = this.pathLocks.get(key) ?? Promise.resolve();
+        const previous = GitService.pathLocks.get(key) ?? Promise.resolve();
 
         let releaseLock: () => void;
         const lockPromise = new Promise<void>(resolve => {
             releaseLock = resolve;
         });
-        this.pathLocks.set(key, lockPromise);
+        GitService.pathLocks.set(key, lockPromise);
 
         // Wait for any previous operation on the same path to complete
         await previous;
@@ -31,8 +31,8 @@ export class GitService {
         } finally {
             releaseLock!();
             // Clean up if this is the latest lock in the chain
-            if (this.pathLocks.get(key) === lockPromise) {
-                this.pathLocks.delete(key);
+            if (GitService.pathLocks.get(key) === lockPromise) {
+                GitService.pathLocks.delete(key);
             }
         }
     }
@@ -54,8 +54,22 @@ export class GitService {
             if (gitDirExists && !this.isValidGitRepo(destPath)) {
                 // Corrupt or incomplete .git directory from a previous failed clone
                 console.warn(`Invalid .git directory detected at ${destPath}. Removing and recloning.`);
-                await fs.promises.rm(destPath, { recursive: true, force: true });
-                await this.clone(repoUrl, destPath);
+                let rmSuccess = false;
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        await fs.promises.rm(destPath, { recursive: true, force: true });
+                        rmSuccess = true;
+                        break;
+                    } catch (e) {
+                        if (i === 2) {
+                            throw new Error(`Failed to remove corrupt directory ${destPath} after 3 attempts: ${e}`);
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 100)); // Delay before retry
+                    }
+                }
+                if (rmSuccess) {
+                    await this.clone(repoUrl, destPath);
+                }
             } else if (gitDirExists) {
                 this.removeGitLockFiles(destPath);
                 await this.pull(destPath);
@@ -68,13 +82,13 @@ export class GitService {
     private async clone(repoUrl: string, destPath: string): Promise<void> {
         const dirExistedBefore = fs.existsSync(destPath);
         try {
-            if (!dirExistedBefore) {
-                await fs.promises.mkdir(destPath, { recursive: true });
-            }
-
             if (!this.useFallback) {
+                // Native git clone creates the directory itself
                 await this.execCommand(`git clone --depth 1 --single-branch "${repoUrl}" "${destPath}"`);
             } else {
+                if (!dirExistedBefore) {
+                    await fs.promises.mkdir(destPath, { recursive: true });
+                }
                 await this.cloneFallback(repoUrl, destPath);
             }
         } catch (error) {
@@ -231,6 +245,9 @@ export class GitService {
     }
 
     public async getFileContentAtSha(repoDir: string, sha: string, relativePath: string): Promise<string> {
+        if (!/^[a-fA-F0-9]{7,40}$/.test(sha)) {
+            throw new Error(`Invalid git SHA provided: ${sha}`);
+        }
         try {
             // git show <sha>:<relativePath>
             if (!this.useFallback) {
@@ -263,6 +280,23 @@ export class GitService {
 
     public async getRepoRoot(filePath: string): Promise<string> {
         const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+            throw new Error(`Directory does not exist: ${dir}`);
+        }
+
+        let current = dir;
+        let found = false;
+        while (current !== path.parse(current).root) {
+            if (fs.existsSync(path.join(current, '.git'))) {
+                found = true;
+                break;
+            }
+            current = path.dirname(current);
+        }
+        if (!found) {
+            throw new Error(`Not a git repository: ${dir}`);
+        }
+
         try {
             if (!this.useFallback) {
                 const stdout = await this.execCommand(`git rev-parse --show-toplevel`, dir);

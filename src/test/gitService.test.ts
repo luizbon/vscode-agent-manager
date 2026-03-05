@@ -213,7 +213,68 @@ suite("GitService Test Suite", () => {
         });
     });
 
+    suite("getRepoRoot", () => {
+        test("throws if directory does not exist", async () => {
+            sandbox.stub(fs, "existsSync").returns(false);
+            await assert.rejects(
+                gitService.getRepoRoot("/invalid/path/file.txt"),
+                /Directory does not exist/
+            );
+        });
+
+        test("throws if not a git repository (no .git found)", async () => {
+            const existsSyncStub = sandbox.stub(fs, "existsSync");
+            existsSyncStub.withArgs("/valid/path").returns(true); // dir exists
+            existsSyncStub.returns(false); // default no .git
+
+            await assert.rejects(
+                gitService.getRepoRoot("/valid/path/file.txt"),
+                /Not a git repository/
+            );
+        });
+    });
+
+    suite("getFileContentAtSha", () => {
+        test("rejects invalid SHA format", async () => {
+            await assert.rejects(
+                gitService.getFileContentAtSha("/repo", "invalid-sha", "file.txt"),
+                /Invalid git SHA provided/
+            );
+        });
+    });
+
     suite("per-path semaphore", () => {
+        test("serialises concurrent operations across different instances", async () => {
+            const gitService1 = new GitService();
+            const gitService2 = new GitService();
+            const executionOrder: number[] = [];
+            let callCount = 0;
+
+            const existsSyncStub = sandbox.stub(fs, "existsSync").returns(false);
+            sandbox.stub(console, "warn");
+            sandbox.stub(fs.promises, "mkdir").resolves(undefined as unknown as string);
+
+            // Stub on prototype since we have two instances
+            const execStub = sandbox.stub(GitService.prototype as any, "execCommand");
+            execStub.callsFake(async () => {
+                const myCall = ++callCount;
+                executionOrder.push(myCall);
+                await new Promise(resolve => setTimeout(resolve, 20));
+                executionOrder.push(myCall * 10);
+                return "";
+            });
+
+            const op1 = gitService1.cloneOrPullRepo("https://github.com/o/r1", DEST);
+            const op2 = gitService2.cloneOrPullRepo("https://github.com/o/r2", DEST);
+
+            await Promise.all([op1, op2]);
+
+            assert.strictEqual(executionOrder[0], 1, "op1 should start first");
+            assert.strictEqual(executionOrder[1], 10, "op1 should finish before op2 starts");
+            assert.strictEqual(executionOrder[2], 2, "op2 should start after op1 finishes");
+            assert.strictEqual(executionOrder[3], 20, "op2 should finish last");
+        });
+
         test("serialises concurrent operations on the same path", async () => {
             const executionOrder: number[] = [];
             let callCount = 0;

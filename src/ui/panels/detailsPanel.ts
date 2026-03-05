@@ -8,7 +8,10 @@ import { TelemetryService } from '../../services/telemetry';
 import { IMarketplaceItem } from '../../domain/models/marketplaceItem';
 
 export class DetailsPanel {
-    private fetchUrl(url: string): Promise<string> {
+    private async fetchUrl(url: string): Promise<string> {
+        if (!fs.existsSync(url)) {
+            throw new Error(`File not found: ${url}`);
+        }
         return fs.promises.readFile(url, 'utf-8');
     }
 
@@ -90,9 +93,14 @@ export class DetailsPanel {
                         try {
                             const content = await this.fetchUrl(this._item.installUrl);
                             this._panel.webview.postMessage({ command: 'updateContent', content });
-                        } catch (e) {
+                        } catch (e: any) {
                             TelemetryService.getInstance().sendError(e as Error, { context: 'fetchContent', item: this._item.name });
-                            this._panel.webview.postMessage({ command: 'updateContent', content: 'Failed to load content: ' + e });
+
+                            const friendlyError = e.message && e.message.includes('File not found')
+                                ? 'Content is not yet available locally. Please try installing or updating this item.'
+                                : 'Failed to load content: ' + e.message;
+
+                            this._panel.webview.postMessage({ command: 'updateContent', content: friendlyError });
                         }
                         return;
                     case 'showDiff':
