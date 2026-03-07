@@ -33,6 +33,22 @@ export class InstallerService {
         await fs.promises.copyFile(sourcePath, destPath);
     }
 
+    private async copyDirectory(sourceBase: string, destBase: string): Promise<void> {
+        if (!fs.existsSync(destBase)) {
+            await fs.promises.mkdir(destBase, { recursive: true });
+        }
+        const entries = await fs.promises.readdir(sourceBase, { withFileTypes: true });
+        for (const entry of entries) {
+            const srcPath = path.join(sourceBase, entry.name);
+            const destPath = path.join(destBase, entry.name);
+            if (entry.isDirectory()) {
+                await this.copyDirectory(srcPath, destPath);
+            } else {
+                await fs.promises.copyFile(srcPath, destPath);
+            }
+        }
+    }
+
     public async updateItem(item: IMarketplaceItem, targetPath: string): Promise<string> {
         const gitService = new GitService();
         let repoRoot = '';
@@ -143,7 +159,13 @@ export class InstallerService {
 
         const fullTargetPath = path.join(finalInstallPath, fileName);
 
-        await this.copyItemFile(item.installUrl, fullTargetPath);
+        if (item.type === 'skill' && fileName === 'SKILL.md') {
+            const sourceDir = path.dirname(item.installUrl);
+            await this.copyDirectory(sourceDir, finalInstallPath);
+        } else {
+            await this.copyItemFile(item.installUrl, fullTargetPath);
+        }
+
         await this.stateStore.update(this.getStateKey(fullTargetPath), currentSha, this.isUserGlobalFn(fullTargetPath));
     }
 }

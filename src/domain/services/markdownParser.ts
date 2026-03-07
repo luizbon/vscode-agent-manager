@@ -14,7 +14,7 @@ export interface ParsedMetadata {
 export class MarkdownParser {
     public static extractMetadata(content: string, filePath: string): ParsedMetadata {
         // Parse frontmatter using js-yaml
-        const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
+        const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---/;
         const match = content.match(frontmatterRegex);
 
         let metadata: any = {};

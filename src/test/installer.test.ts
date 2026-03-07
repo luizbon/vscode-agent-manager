@@ -83,7 +83,8 @@ suite('InstallerService Test Suite', () => {
         };
         const installBasePath = '/work/project/.github/skills';
 
-        const copyStub = sandbox.stub(installerService, 'copyItemFile').resolves();
+        // Stub copyDirectory instead of copyItemFile because this is a SKILL.md item
+        const copyDirStub = sandbox.stub(installerService as any, 'copyDirectory').resolves();
 
         const { GitService } = require('../services/gitService');
         sandbox.stub(GitService.prototype, 'getRepoRoot').resolves('/tmp/source');
@@ -91,11 +92,12 @@ suite('InstallerService Test Suite', () => {
 
         await installerService.installItem(item, installBasePath);
 
-        const expectedPath = path.join(installBasePath, 'my-feature', 'SKILL.md');
-        assert.strictEqual(copyStub.calledOnceWith(item.installUrl, expectedPath), true, `Expected skill to be installed at ${expectedPath}`);
+        const expectedDestPath = path.join(installBasePath, 'my-feature');
+        const expectedSrcPath = path.dirname(item.installUrl);
+        assert.strictEqual(copyDirStub.calledOnceWith(expectedSrcPath, expectedDestPath), true, `Expected skill directory to be copied to ${expectedDestPath}`);
     });
 
-    test('should not replicate folder structure if baseDirectory is empty', async () => {
+    test('should replicate folder structure if baseDirectory is empty', async () => {
         const item: IMarketplaceItem = {
             id: 'repo:SKILL.md',
             type: 'skill',
@@ -108,7 +110,8 @@ suite('InstallerService Test Suite', () => {
         };
         const installBasePath = '/work/project/.github/skills';
 
-        const copyStub = sandbox.stub(installerService, 'copyItemFile').resolves();
+        // Even with empty baseDirectory, it should copy the directory because it's a SKILL.md
+        const copyDirStub = sandbox.stub(installerService as any, 'copyDirectory').resolves();
 
         const { GitService } = require('../services/gitService');
         sandbox.stub(GitService.prototype, 'getRepoRoot').resolves('/tmp/source');
@@ -116,7 +119,8 @@ suite('InstallerService Test Suite', () => {
 
         await installerService.installItem(item, installBasePath);
 
-        const expectedPath = path.join(installBasePath, 'SKILL.md');
-        assert.strictEqual(copyStub.calledOnceWith(item.installUrl, expectedPath), true, `Expected skill to be installed at ${expectedPath}`);
+        const expectedDestPath = installBasePath;
+        const expectedSrcPath = path.dirname(item.installUrl);
+        assert.strictEqual(copyDirStub.calledOnceWith(expectedSrcPath, expectedDestPath), true, `Expected skill directory to be copied to ${expectedDestPath}`);
     });
 });
