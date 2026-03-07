@@ -23,7 +23,7 @@ export class MarkdownParser {
                 metadata = yaml.load(match[1]) || {};
             } catch (e) {
                 console.error(`Error parsing YAML in ${filePath}:`, e);
-                TelemetryService.getInstance().sendError(e as Error, { context: 'yamlParse', filePath });
+                TelemetryService.getInstance().sendEvent('yaml_parse_failure', { context: 'yamlParse', filePath, error: (e as Error).message });
             }
         }
 

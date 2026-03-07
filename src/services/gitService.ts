@@ -9,6 +9,35 @@ export class GitService {
     private useFallback = false;
     private static readonly pathLocks = new Map<string, Promise<void>>();
 
+    private isGitMissingError(error: any): boolean {
+        if (!error) {
+            return false;
+        }
+        const msg = (error.message || '').toLowerCase();
+        if (msg.includes('enoent') && msg.includes('spawn git')) {
+            return true;
+        }
+        if (msg.includes('not recognized')) {
+            return true;
+        }
+        if (msg.includes('command not found')) {
+            return true;
+        }
+        if (msg.includes("'git' ") && /[^\x00-\x7F]/.test(msg)) {
+            return true;
+        }
+        return false;
+    }
+
+    private reportFatalError(error: any, contextProps: { [key: string]: string }): void {
+        const props = { ...contextProps, error: (error as Error).message };
+        if (this.isGitMissingError(error)) {
+            TelemetryService.getInstance().sendEvent('git_missing', props);
+        } else {
+            TelemetryService.getInstance().sendError(error as Error, contextProps);
+        }
+    }
+
     private normalisePath(p: string): string {
         return path.resolve(p).toLowerCase();
     }
@@ -99,7 +128,7 @@ export class GitService {
 
             if (!this.useFallback) {
                 console.warn(`Native git clone failed for ${repoUrl}. Falling back to simple-git. Error: ${error}`);
-                TelemetryService.getInstance().sendError(error as Error, { context: 'git.clone', repoUrl });
+                TelemetryService.getInstance().sendEvent('native_git_fallback', { context: 'git.clone', repoUrl, error: (error as Error).message });
                 this.useFallback = true;
 
                 // Recreate directory for fallback attempt
@@ -124,7 +153,7 @@ export class GitService {
             }
         } catch (error) {
             console.warn(`Native git pull failed in ${destPath}. Falling back to simple-git. Error: ${error}`);
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.pull', destPath });
+            TelemetryService.getInstance().sendEvent('native_git_fallback', { context: 'git.pull', destPath, error: (error as Error).message });
             this.useFallback = true;
             await this.pullFallback(destPath);
         }
@@ -159,7 +188,7 @@ export class GitService {
             const git: SimpleGit = simpleGit();
             await git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch']);
         } catch (error) {
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.cloneFallback', repoUrl });
+            this.reportFatalError(error, { context: 'git.cloneFallback', repoUrl });
             throw error;
         }
     }
@@ -170,7 +199,7 @@ export class GitService {
             await git.fetch(['--depth', '1']);
             await git.raw(['reset', '--hard', 'origin/HEAD']);
         } catch (error) {
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.pullFallback', destPath });
+            this.reportFatalError(error, { context: 'git.pullFallback', destPath });
             throw error;
         }
     }
@@ -189,7 +218,7 @@ export class GitService {
                 return false;
             }
             // If it's another error, try fallback
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.mergeUpdate.exec', currentFile });
+            TelemetryService.getInstance().sendEvent('native_git_fallback', { context: 'git.mergeUpdate.exec', currentFile, error: (error as Error).message });
             if (!this.useFallback) {
                 this.useFallback = true;
                 return await this.mergeUpdateFallback(currentFile, baseFile, newFile);
@@ -212,7 +241,7 @@ export class GitService {
             }
             // For general errors that throw, simple-git throws an error object.
             // If it exits with >0 due to conflicts, simple-git usually throws an async error.
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.mergeUpdateFallback', currentFile });
+            this.reportFatalError(error, { context: 'git.mergeUpdateFallback', currentFile });
             return false;
         }
     }
@@ -227,7 +256,7 @@ export class GitService {
             }
         } catch (error) {
             console.warn(`Native git rev-parse HEAD failed in ${repoDir}. Falling back to simple-git. Error: ${error}`);
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getHeadSha', repoDir });
+            TelemetryService.getInstance().sendEvent('native_git_fallback', { context: 'git.getHeadSha', repoDir, error: (error as Error).message });
             this.useFallback = true;
             return await this.getHeadShaFallback(repoDir);
         }
@@ -239,7 +268,7 @@ export class GitService {
             const sha = await git.revparse(['HEAD']);
             return sha.trim();
         } catch (error) {
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getHeadShaFallback', repoDir });
+            this.reportFatalError(error, { context: 'git.getHeadShaFallback', repoDir });
             throw error;
         }
     }
@@ -260,7 +289,7 @@ export class GitService {
             }
         } catch (error) {
             console.warn(`Native git show failed in ${repoDir} for ${sha}:${relativePath}. Falling back to simple-git. Error: ${error}`);
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getFileContentAtSha', repoDir, sha, relativePath });
+            TelemetryService.getInstance().sendEvent('native_git_fallback', { context: 'git.getFileContentAtSha', repoDir, sha, relativePath, error: (error as Error).message });
             this.useFallback = true;
             return await this.getFileContentAtShaFallback(repoDir, sha, relativePath);
         }
@@ -273,7 +302,7 @@ export class GitService {
             const content = await git.show([`${sha}:${gitPath}`]);
             return content;
         } catch (error) {
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getFileContentAtShaFallback', repoDir, sha, relativePath });
+            this.reportFatalError(error, { context: 'git.getFileContentAtShaFallback', repoDir, sha, relativePath });
             throw error;
         }
     }
@@ -306,7 +335,7 @@ export class GitService {
             }
         } catch (error) {
             console.warn(`Native git rev-parse --show-toplevel failed in ${dir}. Falling back to simple-git. Error: ${error}`);
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getRepoRoot', dir });
+            TelemetryService.getInstance().sendEvent('native_git_fallback', { context: 'git.getRepoRoot', dir, error: (error as Error).message });
             this.useFallback = true;
             return await this.getRepoRootFallback(dir);
         }
@@ -318,7 +347,7 @@ export class GitService {
             const root = await git.revparse(['--show-toplevel']);
             return root.trim();
         } catch (error) {
-            TelemetryService.getInstance().sendError(error as Error, { context: 'git.getRepoRootFallback', dir });
+            this.reportFatalError(error, { context: 'git.getRepoRootFallback', dir });
             throw error;
         }
     }

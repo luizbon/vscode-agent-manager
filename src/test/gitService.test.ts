@@ -199,6 +199,7 @@ suite("GitService Test Suite", () => {
             // Stub telemetry
             const telemetryStub = {
                 sendError: sandbox.stub(),
+                sendEvent: sandbox.stub(),
             };
             sandbox.stub(
                 require("../services/telemetry").TelemetryService,
@@ -365,6 +366,7 @@ suite("GitService Test Suite", () => {
 
             const telemetryStub = {
                 sendError: sandbox.stub(),
+                sendEvent: sandbox.stub(),
             };
             sandbox.stub(
                 require("../services/telemetry").TelemetryService,
