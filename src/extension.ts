@@ -51,6 +51,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   const globalStoragePath = context.globalStorageUri.fsPath;
 
+  // Track known repositories to detect additions
+  const config = vscode.workspace.getConfiguration("agentManager");
+  let knownRepositories = new Set<string>(config.get<string[]>("repositories") || []);
+
   // Dependency Injection setup
   const gitSource = new GitSource();
   const globalStorage = new GlobalStorage(globalStoragePath);
@@ -195,8 +199,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   let installDisposable = vscode.commands.registerCommand(
     "marketplace.install",
-    async (uiItem: any) => {
+    async (uiItem: any, source?: string) => {
       const item = extractItem(uiItem);
+      const actualSource = source || uiItem?.source || 'treeView';
       if (item) {
         try {
           await telemetry.traceOperation("install", async () => {
@@ -264,7 +269,7 @@ export function activate(context: vscode.ExtensionContext) {
                 console.warn(`Could not open installed file in editor: ${openErr}`);
               }
             }
-          }, { item: item.name });
+          }, { item: item.name, type: item.type, source: actualSource });
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to install item: ${error}`);
         }
@@ -302,8 +307,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   let uninstallDisposable = vscode.commands.registerCommand(
     "marketplace.uninstall",
-    async (uiItem: any) => {
+    async (uiItem: any, source?: string) => {
       const item = extractItem(uiItem);
+      const actualSource = source || uiItem?.source || 'treeView';
       if (!item) { return; }
 
       const installedList = item.type === 'agent' ? treeProvider.getInstalledItems().agents : treeProvider.getInstalledItems().skills;
@@ -351,7 +357,7 @@ export function activate(context: vscode.ExtensionContext) {
 
               await refreshInstalledItems();
               webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
-            }, { item: item.name });
+            }, { item: item.name, type: item.type, source: actualSource });
           } catch (error) {
             vscode.window.showErrorMessage(`Failed to uninstall: ${error}`);
           }
@@ -439,6 +445,27 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("agentManager.repositories")) {
+        const newConfig = vscode.workspace.getConfiguration("agentManager");
+        const currentRepositories = newConfig.get<string[]>("repositories") || [];
+
+        // Find newly added repositories
+        const addedRepositories = currentRepositories.filter(repo => !knownRepositories.has(repo));
+
+        addedRepositories.forEach(repo => {
+          // Send telemetry for public github/gitlab repositories
+          if (repo.includes('github.com') || repo.includes('gitlab.com')) {
+            try {
+              const urlObj = new URL(repo);
+              telemetry.sendEvent('repositoryAdded', { url: repo, host: urlObj.hostname });
+            } catch {
+              telemetry.sendEvent('repositoryAdded', { url: repo, host: 'unknown' });
+            }
+          }
+        });
+
+        // Update known repositories
+        knownRepositories = new Set(currentRepositories);
+
         vscode.commands.executeCommand("marketplace.search");
         telemetry.sendEvent('configChange', { setting: 'repositories' });
       }

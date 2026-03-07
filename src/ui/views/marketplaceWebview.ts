@@ -30,7 +30,7 @@ export class MarketplaceWebviewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.onDidReceiveMessage((message) => {
             switch (message.type) {
                 case "installItem":
-                    vscode.commands.executeCommand("marketplace.install", message.item);
+                    vscode.commands.executeCommand("marketplace.install", message.item, 'marketplaceWebview');
                     break;
                 case "viewDetails":
                     vscode.commands.executeCommand(
@@ -40,7 +40,7 @@ export class MarketplaceWebviewProvider implements vscode.WebviewViewProvider {
                     );
                     break;
                 case "uninstallItem":
-                    vscode.commands.executeCommand("marketplace.uninstall", message.item);
+                    vscode.commands.executeCommand("marketplace.uninstall", message.item, 'marketplaceWebview');
                     break;
                 case "search":
                     vscode.commands.executeCommand("marketplace.search", message.force);

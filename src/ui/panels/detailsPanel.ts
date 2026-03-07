@@ -85,7 +85,7 @@ export class DetailsPanel {
             async message => {
                 switch (message.command) {
                     case 'install':
-                        vscode.commands.executeCommand('marketplace.install', this._item);
+                        vscode.commands.executeCommand('marketplace.install', this._item, 'detailsView');
                         return;
                     case 'viewDidLoad':
                         this.fetchLastUpdated(this._item);

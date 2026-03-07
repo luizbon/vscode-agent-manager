@@ -21,6 +21,10 @@ export class GitSource implements IMarketplaceSource {
         const agents: Agent[] = [];
         const skills: Skill[] = [];
 
+        let parsedAgents = 0;
+        let parsedSkills = 0;
+        let parseErrors = 0;
+
         for (const filePath of filePaths) {
             try {
                 const content = await fs.promises.readFile(filePath, 'utf-8');
@@ -46,15 +50,43 @@ export class GitSource implements IMarketplaceSource {
 
                 if (isSkill) {
                     const skill = SkillParser.parse(content, repoUrl, filePath, baseDirectory);
-                    if (skill) { skills.push(skill); }
+                    if (skill) {
+                        skills.push(skill);
+                        parsedSkills++;
+                    }
                 } else {
                     const agent = AgentParser.parse(content, repoUrl, filePath, baseDirectory);
-                    if (agent) { agents.push(agent); }
+                    if (agent) {
+                        agents.push(agent);
+                        parsedAgents++;
+                    }
                 }
             } catch (error) {
                 console.error(`Failed to parse item ${filePath}:`, error);
-                TelemetryService.getInstance().sendError(error as Error, { context: 'itemParse', filePath });
+                TelemetryService.getInstance().sendError(error as Error, { context: 'itemParse', filePath, repoUrl });
+                parseErrors++;
             }
+        }
+
+        try {
+            const urlObj = new URL(repoUrl);
+            TelemetryService.getInstance().sendEvent('repository.parse.outcome', {
+                repoUrl,
+                host: urlObj.hostname,
+                totalFilesFound: filePaths.length.toString(),
+                parsedAgents: parsedAgents.toString(),
+                parsedSkills: parsedSkills.toString(),
+                parseErrors: parseErrors.toString()
+            });
+        } catch {
+            TelemetryService.getInstance().sendEvent('repository.parse.outcome', {
+                repoUrl,
+                host: 'unknown',
+                totalFilesFound: filePaths.length.toString(),
+                parsedAgents: parsedAgents.toString(),
+                parsedSkills: parsedSkills.toString(),
+                parseErrors: parseErrors.toString()
+            });
         }
 
         return { agents, skills };
