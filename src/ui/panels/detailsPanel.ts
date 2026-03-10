@@ -6,6 +6,7 @@ import * as upath from 'upath';
 import { execFile } from 'child_process';
 import { TelemetryService } from '../../services/telemetry';
 import { IMarketplaceItem } from '../../domain/models/marketplaceItem';
+import { CliPlugin } from '../../domain/models/cliPlugin';
 
 export class DetailsPanel {
     private async fetchUrl(url: string): Promise<string> {
@@ -13,6 +14,48 @@ export class DetailsPanel {
             throw new Error(`File not found: ${url}`);
         }
         return fs.promises.readFile(url, 'utf-8');
+    }
+
+    private async fetchPluginContent(item: CliPlugin): Promise<string> {
+        if (item.localSourcePath) {
+            const readmePaths = [
+                path.join(item.localSourcePath, 'README.md'),
+                path.join(item.localSourcePath, 'readme.md'),
+                path.join(item.localSourcePath, 'README'),
+                path.join(item.localSourcePath, 'readme')
+            ];
+
+            for (const readmePath of readmePaths) {
+                if (fs.existsSync(readmePath)) {
+                    return fs.promises.readFile(readmePath, 'utf-8');
+                }
+            }
+        }
+
+        // Fallback to structured metadata
+        let content = `# ${item.name}\n\n`;
+        if (item.description) {
+            content += `${item.description}\n\n`;
+        }
+        content += `---\n`;
+        content += `- **Type:** CLI Plugin\n`;
+        if (item.version) {
+            content += `- **Version:** ${item.version}\n`;
+        }
+        if (item.author) {
+            content += `- **Author:** ${item.author}\n`;
+        }
+        if (item.repository) {
+            content += `- **Repository:** ${item.repository}\n`;
+        }
+        if (item.path && item.path !== '.') {
+            content += `- **Subdirectoy:** ${item.path}\n`;
+        }
+        if (item.tags && item.tags.length > 0) {
+            content += `- **Tags:** ${item.tags.join(', ')}\n`;
+        }
+
+        return content;
     }
 
     private async fetchLastUpdated(item: IMarketplaceItem) {
@@ -91,7 +134,12 @@ export class DetailsPanel {
                         this.fetchLastUpdated(this._item);
                         this.checkInstallationStatus(this._item);
                         try {
-                            const content = await this.fetchUrl(this._item.installUrl);
+                            let content: string;
+                            if (this._item.type === 'cli-plugin') {
+                                content = await this.fetchPluginContent(this._item as CliPlugin);
+                            } else {
+                                content = await this.fetchUrl(this._item.installUrl);
+                            }
                             this._panel.webview.postMessage({ command: 'updateContent', content });
                         } catch (e: any) {
                             const isNotFoundError = e.message && (e.message.includes('File not found') || e.code === 'ENOENT');
@@ -159,6 +207,12 @@ export class DetailsPanel {
     }
 
     private async checkInstallationStatus(item: IMarketplaceItem) {
+        // CLI plugins are managed by the Copilot CLI, not the local filesystem
+        if (item.type === 'cli-plugin') {
+            this._panel.webview.postMessage({ command: 'updateStatus', status: 'not-installed' });
+            return;
+        }
+
         let localPath: string | undefined;
 
         const getTargetPath = (basePath: string) => {
@@ -263,7 +317,8 @@ export class DetailsPanel {
         const nonce = this.getNonce();
         const safeName = this.escapeHtml(item.name);
         const safeRepo = this.escapeHtml(item.repository);
-        const itemType = item.type === 'agent' ? 'Agent' : 'Skill';
+        const typeLabel = item.type === 'agent' ? 'Agent' : (item.type === 'cli-plugin' ? 'CLI Plugin' : 'Skill');
+        const badgeClass = item.type === 'agent' ? 'badge-agent' : (item.type === 'cli-plugin' ? 'badge-plugin' : 'badge-skill');
 
         return `<!DOCTYPE html>
             <html lang="en">
@@ -278,6 +333,7 @@ export class DetailsPanel {
                     .badge { font-size: 0.6em; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; font-weight: bold; }
                     .badge-agent { background-color: #007acc; color: white; }
                     .badge-skill { background-color: #2ea043; color: white; }
+                    .badge-plugin { background-color: #8250df; color: white; }
                     .meta { margin-bottom: 20px; color: var(--vscode-descriptionForeground); }
                     .actions { margin-bottom: 20px; }
                     button { 
@@ -300,7 +356,7 @@ export class DetailsPanel {
             </head>
             <body>
                 <h1>
-                    <span class="badge ${item.type === 'agent' ? 'badge-agent' : 'badge-skill'}">${itemType}</span>
+                    <span class="badge ${badgeClass}">${typeLabel}</span>
                     ${safeName}
                 </h1>
                 <div class="meta">
@@ -310,8 +366,8 @@ export class DetailsPanel {
                 </div>
                 
                 <div class="actions">
-                    <button id="install-btn" style="display:none;">Install ${itemType}</button>
-                    <button id="update-btn" style="display:none;">Update ${itemType}</button>
+                    <button id="install-btn" style="display:none;">Install ${typeLabel}</button>
+                    <button id="update-btn" style="display:none;">Update ${typeLabel}</button>
                     <button id="diff-btn" style="display:none; margin-left: 10px;">Show Changes</button>
                     <span id="installed-msg" style="display:none; color: var(--vscode-notebookStatusSuccessIcon-foreground);">✔ Installed (Up to date)</span>
                 </div>

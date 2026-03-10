@@ -150,6 +150,19 @@
           },
           "uniqueItems": true
         },
+        "agentManager.cliPluginSources": {
+          "type": "array",
+          "default": [
+            "https://github.com/anthropics/claude-code"
+          ],
+          "description": "List of GitHub repositories to index for compatible Copilot CLI plugins. This supports standard Copilot plugins as well as Claude Code plugins.",
+          "items": {
+            "type": "string",
+            "description": "Git Repository URL",
+            "pattern": "^(https?://|git@).+$"
+          },
+          "uniqueItems": true
+        },
         "agentManager.cacheDurationDays": {
           "type": "number",
           "default": 7,

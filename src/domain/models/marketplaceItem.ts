@@ -1,6 +1,6 @@
 export interface IMarketplaceItem {
     id: string; // Typically repository:path or just path-based unique ID
-    type: 'agent' | 'skill';
+    type: 'agent' | 'skill' | 'cli-plugin';
     name: string;
     description: string;
     version?: string;

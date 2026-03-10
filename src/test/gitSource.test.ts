@@ -31,7 +31,7 @@ suite('GitSource Test Suite', () => {
 
         // Deep path: plugins/copilot-sdk/skills/copilot-sdk/SKILL.md
         const skillPath = path.join(destPath, 'plugins', 'copilot-sdk', 'skills', 'copilot-sdk', 'SKILL.md');
-        sandbox.stub(gitSource as any, 'findFiles').resolves([skillPath]);
+        sandbox.stub(gitSource as any, 'findAgentSkillFiles').resolves([skillPath]);
 
         sandbox.stub(fs.promises, 'readFile').resolves('content');
         const parseSpy = sandbox.spy(SkillParser, 'parse');
@@ -55,7 +55,7 @@ suite('GitSource Test Suite', () => {
 
         // Path ending in .../skills/SKILL.md
         const skillPath = path.join(destPath, 'plugins', 'skills', 'SKILL.md');
-        sandbox.stub(gitSource as any, 'findFiles').resolves([skillPath]);
+        sandbox.stub(gitSource as any, 'findAgentSkillFiles').resolves([skillPath]);
 
         sandbox.stub(fs.promises, 'readFile').resolves('content');
         const parseSpy = sandbox.spy(SkillParser, 'parse');
@@ -77,7 +77,7 @@ suite('GitSource Test Suite', () => {
         sandbox.stub(GitService.prototype, 'cloneOrPullRepo').resolves();
 
         const agentPath = path.join(destPath, 'agents', 'my-feature', 'my-agent.agent.md');
-        sandbox.stub(gitSource as any, 'findFiles').resolves([agentPath]);
+        sandbox.stub(gitSource as any, 'findAgentSkillFiles').resolves([agentPath]);
 
         sandbox.stub(fs.promises, 'readFile').resolves('content');
         const parseSpy = sandbox.spy(AgentParser, 'parse');
@@ -99,7 +99,7 @@ suite('GitSource Test Suite', () => {
         sandbox.stub(GitService.prototype, 'cloneOrPullRepo').resolves();
 
         const skillPath = path.join(destPath, 'SKILL.md');
-        sandbox.stub(gitSource as any, 'findFiles').resolves([skillPath]);
+        sandbox.stub(gitSource as any, 'findAgentSkillFiles').resolves([skillPath]);
 
         sandbox.stub(fs.promises, 'readFile').resolves('content');
         const parseSpy = sandbox.spy(SkillParser, 'parse');
@@ -123,7 +123,7 @@ suite('GitSource Test Suite', () => {
         // Simulating a path with backslashes
         // The code should normalize the input to forward slashes before calculating relative paths
         const skillPath = destPath + '/plugins/copilot-sdk/skills/my-feat/SKILL.md';
-        sandbox.stub(gitSource as any, 'findFiles').resolves([skillPath]);
+        sandbox.stub(gitSource as any, 'findAgentSkillFiles').resolves([skillPath]);
 
         sandbox.stub(fs.promises, 'readFile').resolves('content');
         const parseSpy = sandbox.spy(SkillParser, 'parse');

@@ -7,10 +7,12 @@ import * as fs from 'fs';
 
 // Domain
 import { IMarketplaceItem } from './domain/models/marketplaceItem';
+import { CliPlugin } from './domain/models/cliPlugin';
 
 // Application
 import { MarketplaceService } from './application/marketplaceService';
 import { InstallerService, IStateStore, IConflictResolver } from './application/installerService';
+import { CopilotCliService } from './services/copilotCliService';
 
 // Infrastructure
 import { GitSource } from './infrastructure/sources/gitSource';
@@ -60,6 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
   const globalStorage = new GlobalStorage(globalStoragePath);
 
   const marketplaceService = new MarketplaceService(globalStoragePath);
+  const copilotCliService = new CopilotCliService();
 
   const stateStore: IStateStore = {
     get: async (key: string, isGlobal: boolean) => {
@@ -108,10 +111,30 @@ export function activate(context: vscode.ExtensionContext) {
     const local = await LocalWorkspaceStorage.getInstalledItems();
     const global = globalStorage.getInstalledItems();
 
+    const cliPluginsResponse = await copilotCliService.listInstalledPlugins();
+    const cachedItems = treeProvider.getAllCachedItems();
+    const cliPlugins: CliPlugin[] = cliPluginsResponse.map((p: any) => {
+      // Find matching plugin in cache to recover its localSourcePath and tags
+      const cached = cachedItems.cliPlugins.find(c => c.name === p.name);
+
+      return new CliPlugin(
+        p.name,             // id 
+        p.name,             // name
+        p.description || cached?.description || '',
+        cached?.installUrl || '',
+        cached?.repository || 'Copilot CLI',
+        cached?.path || '.',
+        p.author || cached?.author || '',
+        p.version || cached?.version || '',
+        cached?.tags,
+        cached?.localSourcePath
+      );
+    });
+
     const combinedAgents = [...local.agents, ...global.agents];
     const combinedSkills = [...local.skills, ...global.skills];
 
-    treeProvider.setInstalledItems(combinedAgents, combinedSkills);
+    treeProvider.setInstalledItems(combinedAgents, combinedSkills, cliPlugins);
   };
 
   let searchDisposable = vscode.commands.registerCommand(
@@ -122,11 +145,13 @@ export function activate(context: vscode.ExtensionContext) {
       await telemetry.traceOperation("search", async () => {
         const config = vscode.workspace.getConfiguration("agentManager");
         const repositories = config.get<string[]>("repositories") || [];
+        const cliPluginSources = config.get<string[]>("cliPluginSources") || [];
 
         treeProvider.prune(repositories);
+        treeProvider.pruneCliPluginSources(cliPluginSources);
         await refreshInstalledItems();
 
-        if (repositories.length === 0) {
+        if (repositories.length === 0 && cliPluginSources.length === 0) {
           vscode.window.showWarningMessage("No repositories configured.");
           treeView.message = "No repositories configured.";
           treeProvider.clear();
@@ -134,9 +159,10 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        let reposToFetch = force ? repositories : repositories.filter(repo => !treeProvider.isCacheValid(repo));
+        const reposToFetch = force ? repositories : repositories.filter(repo => !treeProvider.isCacheValid(repo));
+        const pluginSourcesToFetch = force ? cliPluginSources : cliPluginSources.filter(repo => !treeProvider.isCliPluginCacheValid(repo));
 
-        if (reposToFetch.length === 0) {
+        if (reposToFetch.length === 0 && pluginSourcesToFetch.length === 0) {
           const allCached = treeProvider.getAllCachedItems();
           webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
           treeView.message = undefined;
@@ -146,13 +172,13 @@ export function activate(context: vscode.ExtensionContext) {
         await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: "Searching for items...", cancellable: false },
           async (progress) => {
-            let totalItems = 0;
+            // Fetch agent/skill repos
             for (const repo of reposToFetch) {
               progress.report({ message: `Fetching from ${repo}...` });
               try {
-                const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource);
-                if (fetched.agents.length > 0 || fetched.skills.length > 0) {
-                  treeProvider.addItems(repo, fetched.agents, fetched.skills);
+                const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource, 'agent');
+                if (fetched.agents.length > 0 || fetched.skills.length > 0 || (fetched.cliPlugins && fetched.cliPlugins.length > 0)) {
+                  treeProvider.addItems(repo, fetched.agents, fetched.skills, fetched.cliPlugins);
                 }
               } catch (error) {
                 console.error(`Error searching ${repo}:`, error);
@@ -160,12 +186,26 @@ export function activate(context: vscode.ExtensionContext) {
               }
             }
 
+            // Fetch CLI plugin sources
+            for (const repo of pluginSourcesToFetch) {
+              progress.report({ message: `Fetching plugins from ${repo}...` });
+              try {
+                const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource, 'plugin');
+                const plugins = fetched.cliPlugins || [];
+                treeProvider.addCliPluginItems(repo, plugins);
+                telemetry.sendEvent('cliPluginSourceFetched', { repo, count: plugins.length.toString() });
+              } catch (error) {
+                console.error(`Error fetching CLI plugins from ${repo}:`, error);
+                telemetry.sendError(error as Error, { context: "cliPluginSearch", repo });
+              }
+            }
+
             const allCached = treeProvider.getAllCachedItems();
-            totalItems = allCached.agents.length + allCached.skills.length;
+            const totalItems = allCached.agents.length + allCached.skills.length + allCached.cliPlugins.length;
 
             webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
 
-            if (totalItems === 0 && repositories.length > 0 && treeProvider.isEmpty) {
+            if (totalItems === 0 && (repositories.length > 0 || cliPluginSources.length > 0) && treeProvider.isEmpty) {
               treeView.message = "No items found.";
             } else {
               treeView.message = undefined;
@@ -181,14 +221,19 @@ export function activate(context: vscode.ExtensionContext) {
     async (uiItem: any) => {
       if (uiItem && uiItem.repoUrl) {
         const repo = uiItem.repoUrl;
+        const mode = uiItem.sourceType === 'plugin-source' ? 'plugin' : 'agent';
         await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: `Refreshing ${uiItem.label}...`, cancellable: false },
           async () => {
             await telemetry.traceOperation("refreshSource", async () => {
-              const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource);
-              treeProvider.addItems(repo, fetched.agents, fetched.skills);
+              const fetched = await marketplaceService.fetchItemsFromRepo(repo, gitSource, mode);
+              if (mode === 'plugin') {
+                treeProvider.addCliPluginItems(repo, fetched.cliPlugins || []);
+              } else {
+                treeProvider.addItems(repo, fetched.agents, fetched.skills);
+              }
               webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
-            }, { repo }).catch(error => {
+            }, { repo, mode }).catch(error => {
               vscode.window.showErrorMessage(`Failed to refresh ${uiItem.label}: ${error}`);
             });
           }
@@ -205,6 +250,29 @@ export function activate(context: vscode.ExtensionContext) {
       if (item) {
         try {
           await telemetry.traceOperation("install", async () => {
+            if (item.type === 'cli-plugin') {
+              const isInstalled = await copilotCliService.isCliInstalled();
+              if (!isInstalled) {
+                const installCli = await vscode.window.showWarningMessage('Copilot CLI is not installed. It is required to manage CLI plugins. Install it now?', 'Yes', 'No');
+                if (installCli === 'Yes') {
+                  const terminal = vscode.window.createTerminal("Copilot CLI Installation");
+                  terminal.show();
+                  terminal.sendText("npm install -g @githubnext/github-copilot-cli");
+                  vscode.window.showInformationMessage("Please wait for the installation to finish in the terminal, then try installing the plugin again.");
+                }
+                return;
+              }
+
+              vscode.window.showInformationMessage(`Installing CLI Plugin ${item.name}...`);
+              const success = await copilotCliService.installPlugin(item.installUrl);
+              if (success) {
+                vscode.window.showInformationMessage(`CLI Plugin ${item.name} installed successfully.`);
+                await refreshInstalledItems();
+                webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
+              }
+              return;
+            }
+
             const installOptions: vscode.QuickPickItem[] = [];
             if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
               const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
@@ -312,10 +380,18 @@ export function activate(context: vscode.ExtensionContext) {
       const actualSource = source || uiItem?.source || 'treeView';
       if (!item) { return; }
 
-      const installedList = item.type === 'agent' ? treeProvider.getInstalledItems().agents : treeProvider.getInstalledItems().skills;
+      let installedList: any[] = [];
+      if (item.type === 'agent') {
+        installedList = treeProvider.getInstalledItems().agents;
+      } else if (item.type === 'skill') {
+        installedList = treeProvider.getInstalledItems().skills;
+      } else if (item.type === 'cli-plugin') {
+        installedList = treeProvider.getInstalledItems().cliPlugins;
+      }
+
       const installed = installedList.find(a => a.name === item.name);
 
-      if (installed && installed.path) {
+      if (installed && (installed.path || item.type === 'cli-plugin')) {
         const confirm = await vscode.window.showWarningMessage(
           `Are you sure you want to uninstall ${item.name}?`,
           { modal: true }, "Uninstall"
@@ -324,8 +400,16 @@ export function activate(context: vscode.ExtensionContext) {
         if (confirm === "Uninstall") {
           try {
             await telemetry.traceOperation("uninstall", async () => {
+              if (item.type === 'cli-plugin') {
+                await copilotCliService.uninstallPlugin(item.name);
+                vscode.window.showInformationMessage(`Uninstalled CLI Plugin ${item.name}`);
+                await refreshInstalledItems();
+                webviewProvider.updateItems(treeProvider.getAllCachedItems(), treeProvider.getInstalledItems());
+                return;
+              }
+
               if (item.type === 'skill') {
-                const parentDir = path.dirname(installed.path);
+                const parentDir = path.dirname(installed.path!);
                 // Treat skill directories as packages - delete the whole folder,
                 // UNLESS the skill is installed directly in a root skills dir (no subdirectory)
                 const skillRootDirs = [
