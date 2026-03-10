@@ -65,7 +65,7 @@ suite("GitService Test Suite", () => {
 
             assert.ok(
                 execStub.calledWith(
-                    `git clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
+                    `git -c safe.directory=* clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
                 )
             );
         });
@@ -97,9 +97,9 @@ suite("GitService Test Suite", () => {
 
             await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
-            assert.ok(execStub.calledWith("git fetch --depth 1", DEST));
+            assert.ok(execStub.calledWith("git -c safe.directory=* fetch --depth 1", DEST));
             assert.ok(
-                execStub.calledWith("git reset --hard origin/HEAD", DEST)
+                execStub.calledWith("git -c safe.directory=* reset --hard origin/HEAD", DEST)
             );
         });
 
@@ -131,7 +131,7 @@ suite("GitService Test Suite", () => {
             assert.ok(rmStub.calledWith(DEST, { recursive: true, force: true }));
             assert.ok(
                 execStub.calledWith(
-                    `git clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
+                    `git -c safe.directory=* clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
                 )
             );
         });
