@@ -7,6 +7,8 @@ import { execFile } from 'child_process';
 import { TelemetryService } from '../../services/telemetry';
 import { IMarketplaceItem } from '../../domain/models/marketplaceItem';
 import { CliPlugin } from '../../domain/models/cliPlugin';
+import { marked } from 'marked';
+import { GitService } from '../../services/gitService';
 
 export class DetailsPanel {
     private async fetchUrl(url: string): Promise<string> {
@@ -17,15 +19,24 @@ export class DetailsPanel {
     }
 
     private async fetchPluginContent(item: CliPlugin): Promise<string> {
-        if (item.localSourcePath) {
-            const readmePaths = [
-                path.join(item.localSourcePath, 'README.md'),
-                path.join(item.localSourcePath, 'readme.md'),
-                path.join(item.localSourcePath, 'README'),
-                path.join(item.localSourcePath, 'readme')
-            ];
+        // Build a list of directories to search for a README
+        const searchDirs: string[] = [];
 
-            for (const readmePath of readmePaths) {
+        if (item.localSourcePath) {
+            searchDirs.push(item.localSourcePath);
+        }
+
+        // Also try the cloned repo root (covers GitHub/URL/npm sources where localSourcePath is undefined)
+        const clonedRepoDir = this.resolveClonedRepoDir(item);
+        if (clonedRepoDir && !searchDirs.includes(clonedRepoDir)) {
+            searchDirs.push(clonedRepoDir);
+        }
+
+        const readmeNames = ['README.md', 'readme.md', 'README', 'readme'];
+
+        for (const dir of searchDirs) {
+            for (const name of readmeNames) {
+                const readmePath = path.join(dir, name);
                 if (fs.existsSync(readmePath)) {
                     return fs.promises.readFile(readmePath, 'utf-8');
                 }
@@ -49,7 +60,7 @@ export class DetailsPanel {
             content += `- **Repository:** ${item.repository}\n`;
         }
         if (item.path && item.path !== '.') {
-            content += `- **Subdirectoy:** ${item.path}\n`;
+            content += `- **Subdirectory:** ${item.path}\n`;
         }
         if (item.tags && item.tags.length > 0) {
             content += `- **Tags:** ${item.tags.join(', ')}\n`;
@@ -58,19 +69,67 @@ export class DetailsPanel {
         return content;
     }
 
+    /**
+     * Derives the absolute path to the cloned repo directory for a CLI plugin.
+     * Uses the same naming convention as `GitSource` / `GitService`.
+     */
+    private resolveClonedRepoDir(item: CliPlugin): string | undefined {
+        const repoUrl = item.repository;
+        if (!repoUrl) { return undefined; }
+        try {
+            const gitService = new GitService();
+            const repoDirName = gitService.getRepoDirName(repoUrl);
+            const globalStoragePath = this.context.globalStorageUri.fsPath;
+            return path.join(globalStoragePath, 'repos', repoDirName);
+        } catch {
+            return undefined;
+        }
+    }
+
     private async fetchLastUpdated(item: IMarketplaceItem) {
         try {
-            const filePath = item.installUrl;
-            if (!fs.existsSync(filePath)) { return; }
+            // For CLI plugins, installUrl is not a local file path. Resolve via localSourcePath or cloned repo dir.
+            let targetPath: string | undefined;
 
-            const dir = path.dirname(filePath);
-            execFile('git', ['log', '-1', '--format=%cI', filePath], { cwd: dir }, (error: any, stdout: string) => {
-                let dateToUse = new Date();
+            if (item.type === 'cli-plugin') {
+                const plugin = item as CliPlugin;
+                if (plugin.localSourcePath && fs.existsSync(plugin.localSourcePath)) {
+                    targetPath = plugin.localSourcePath;
+                } else {
+                    const clonedDir = this.resolveClonedRepoDir(plugin);
+                    if (clonedDir && fs.existsSync(clonedDir)) {
+                        targetPath = clonedDir;
+                    }
+                }
+
+                if (!targetPath) {
+                    this._panel.webview.postMessage({ command: 'updateDate', date: 'N/A' });
+                    return;
+                }
+            } else {
+                const filePath = item.installUrl;
+                if (!fs.existsSync(filePath)) {
+                    this._panel.webview.postMessage({ command: 'updateDate', date: 'N/A' });
+                    return;
+                }
+                targetPath = filePath;
+            }
+
+            const dir = fs.statSync(targetPath).isDirectory() ? targetPath : path.dirname(targetPath);
+            const fileArg = fs.statSync(targetPath).isDirectory() ? [] : [targetPath];
+
+            execFile('git', ['log', '-1', '--format=%cI', ...fileArg], { cwd: dir }, (error: any, stdout: string) => {
+                let dateToUse: Date;
                 if (!error && stdout.trim()) {
                     dateToUse = new Date(stdout.trim());
                 } else {
-                    const stat = fs.statSync(filePath);
-                    dateToUse = stat.mtime;
+                    try {
+                        const stat = fs.statSync(targetPath!);
+                        dateToUse = stat.mtime;
+                    } catch {
+                        this._panel.webview.postMessage({ command: 'updateDate', date: 'N/A' });
+                        return;
+                    }
                 }
                 const formattedDate = dateToUse.toLocaleDateString(undefined, {
                     year: 'numeric',
@@ -82,6 +141,7 @@ export class DetailsPanel {
         } catch (e) {
             console.error('Error fetching commit date:', e);
             TelemetryService.getInstance().sendError(e as Error, { context: 'fetchLastUpdated', item: item.name });
+            this._panel.webview.postMessage({ command: 'updateDate', date: 'N/A' });
         }
     }
 
@@ -140,7 +200,8 @@ export class DetailsPanel {
                             } else {
                                 content = await this.fetchUrl(this._item.installUrl);
                             }
-                            this._panel.webview.postMessage({ command: 'updateContent', content });
+                            const parsedContent = await marked.parse(content);
+                            this._panel.webview.postMessage({ command: 'updateContent', content, parsedContent });
                         } catch (e: any) {
                             const isNotFoundError = e.message && (e.message.includes('File not found') || e.code === 'ENOENT');
 
@@ -201,9 +262,9 @@ export class DetailsPanel {
     public update(item: IMarketplaceItem, searchTerm?: string) {
         this._item = item;
         this._panel.title = item.name;
+        // Setting html triggers a fresh webview load which fires viewDidLoad,
+        // so fetchLastUpdated and checkInstallationStatus are handled there.
         this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, item, searchTerm);
-        this.fetchLastUpdated(item);
-        this.checkInstallationStatus(item);
     }
 
     private async checkInstallationStatus(item: IMarketplaceItem) {
@@ -349,9 +410,17 @@ export class DetailsPanel {
                         background-color: var(--vscode-editor-background); 
                         padding: 10px; 
                         border: 1px solid var(--vscode-widget-border);
-                        white-space: pre-wrap; 
                         font-family: var(--vscode-editor-font-family);
                     }
+                    .content-raw {
+                        white-space: pre-wrap; 
+                    }
+                    .tabs { display: flex; border-bottom: 1px solid var(--vscode-widget-border); margin-bottom: 10px; }
+                    .tab { padding: 8px 16px; cursor: pointer; border-bottom: 2px solid transparent; }
+                    .tab.active { border-bottom-color: var(--vscode-button-background); font-weight: bold; }
+                    .tab-content { display: none; }
+                    .tab-content.active { display: block; }
+                    .markdown-body img { max-width: 100%; box-sizing: content-box; background-color: var(--vscode-editor-background); }
                 </style>
             </head>
             <body>
@@ -375,7 +444,12 @@ export class DetailsPanel {
                 <hr/>
                 
                 <h2>Content Preview</h2>
-                <div class="content" id="content">Loading content...</div>
+                <div class="tabs">
+                    <div class="tab active" data-target="preview">Preview</div>
+                    <div class="tab" data-target="raw">Raw</div>
+                </div>
+                <div class="content markdown-body tab-content active" id="content-preview">Loading content...</div>
+                <div class="content content-raw tab-content" id="content-raw"></div>
 
                 <script nonce="${nonce}">
                     const vscode = acquireVsCodeApi();
@@ -397,6 +471,15 @@ export class DetailsPanel {
                     if (installBtnEl) installBtnEl.addEventListener('click', install);
                     if (updateBtnEl) updateBtnEl.addEventListener('click', install);
                     if (diffBtnEl) diffBtnEl.addEventListener('click', showDiff);
+
+                    document.querySelectorAll('.tab').forEach(tab => {
+                        tab.addEventListener('click', () => {
+                            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                            tab.classList.add('active');
+                            document.getElementById('content-' + tab.dataset.target).classList.add('active');
+                        });
+                    });
 
                     window.addEventListener('message', event => {
                         const message = event.data;
@@ -436,25 +519,35 @@ export class DetailsPanel {
                                 }
                                 break;
                             case 'updateContent':
-                                    const contentDiv = document.getElementById('content');
-                                    if (contentDiv) {
-                                        let text = message.content;
-                                        let safeText = text.replace(/&/g, "&amp;")
-                                            .replace(/</g, "&lt;")
-                                            .replace(/>/g, "&gt;")
-                                            .replace(/"/g, "&quot;")
-                                            .replace(/'/g, "&#039;");
+                                    const previewDiv = document.getElementById('content-preview');
+                                    const rawDiv = document.getElementById('content-raw');
+                                    if (previewDiv && rawDiv) {
+                                        let rawText = message.content;
+                                        let parsedText = message.parsedContent || rawText;
 
                                         if (searchTerm) {
-                                            contentDiv.innerHTML = highlightText(safeText, searchTerm);
+                                            const safeRaw = escapeHtml(rawText);
+                                            rawDiv.innerHTML = highlightText(safeRaw, searchTerm);
+                                            previewDiv.innerHTML = highlightText(parsedText, searchTerm);
                                         } else {
-                                            contentDiv.textContent = text;
+                                            rawDiv.textContent = rawText;
+                                            previewDiv.innerHTML = parsedText;
                                         }
                                     }
                                     break;
                             }
                         });
     
+                        function escapeHtml(unsafe) {
+                            if (!unsafe) return '';
+                            return unsafe
+                                .replace(/&/g, "&amp;")
+                                .replace(/</g, "&lt;")
+                                .replace(/>/g, "&gt;")
+                                .replace(/"/g, "&quot;")
+                                .replace(/'/g, "&#039;");
+                        }
+
                         function escapeRegExp(string) {
                             const pattern = '[.*+?^$' + '{}()|[\\\\\\]\\\\\\\\]';
                             return string.replace(new RegExp(pattern, 'g'), '\\\\$&');

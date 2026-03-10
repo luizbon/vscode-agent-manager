@@ -145,13 +145,13 @@ export function activate(context: vscode.ExtensionContext) {
       await telemetry.traceOperation("search", async () => {
         const config = vscode.workspace.getConfiguration("agentManager");
         const repositories = config.get<string[]>("repositories") || [];
-        const cliPluginSources = config.get<string[]>("cliPluginSources") || [];
+        const pluginSources = config.get<string[]>("pluginSources") || [];
 
         treeProvider.prune(repositories);
-        treeProvider.pruneCliPluginSources(cliPluginSources);
+        treeProvider.pruneCliPluginSources(pluginSources);
         await refreshInstalledItems();
 
-        if (repositories.length === 0 && cliPluginSources.length === 0) {
+        if (repositories.length === 0 && pluginSources.length === 0) {
           vscode.window.showWarningMessage("No repositories configured.");
           treeView.message = "No repositories configured.";
           treeProvider.clear();
@@ -160,7 +160,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         const reposToFetch = force ? repositories : repositories.filter(repo => !treeProvider.isCacheValid(repo));
-        const pluginSourcesToFetch = force ? cliPluginSources : cliPluginSources.filter(repo => !treeProvider.isCliPluginCacheValid(repo));
+        const pluginSourcesToFetch = force ? pluginSources : pluginSources.filter(repo => !treeProvider.isCliPluginCacheValid(repo));
 
         if (reposToFetch.length === 0 && pluginSourcesToFetch.length === 0) {
           const allCached = treeProvider.getAllCachedItems();
@@ -205,7 +205,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             webviewProvider.updateItems(allCached, treeProvider.getInstalledItems());
 
-            if (totalItems === 0 && (repositories.length > 0 || cliPluginSources.length > 0) && treeProvider.isEmpty) {
+            if (totalItems === 0 && (repositories.length > 0 || pluginSources.length > 0) && treeProvider.isEmpty) {
               treeView.message = "No items found.";
             } else {
               treeView.message = undefined;

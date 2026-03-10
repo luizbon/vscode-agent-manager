@@ -12,7 +12,7 @@
 
 </div>
 
-**VS Code Agent Manager** is the essential toolkit for supercharging your GitHub Copilot experience. Effortlessly discover, install, and manage custom Copilot Agents directly within VS Code.
+**VS Code Agent Manager** is the essential toolkit for supercharging your GitHub Copilot experience. Effortlessly discover, install, and manage custom Copilot Agents, Skills, and Plugins directly within VS Code.
 
 > **Note:** This extension is designed to work with GitHub Copilot Chat.
 
@@ -25,6 +25,9 @@ Stop manually hunting for configurations. Point the Agent Manager to **any GitHu
 
 ### 🧠 Skills Management
 In addition to agents, the extension supports the discovery and management of **Skills**. A skill is a reusable set of instructions or context that can be attached to agents. The extension automatically discovers skills in your configured repositories and allows you to install and manage them alongside your agents.
+
+### 🔌 Plugin Support
+Discover and manage plugins for the Copilot. Provide repository sources, and the Agent Manager will index compatible plugins. View detailed plugin documentation directly in the marketplace.
 
 ### 📦 One-Click Installation
 Install agents in seconds. Choose to install them globally (User Profile) for access in all projects, or locally (Workspace) for project-specific needs.
@@ -46,7 +49,8 @@ Includes privacy-respecting telemetry (opt-in based on your overall VS Code sett
 Open the **Agent Manager** view by clicking the robot icon in the Activity Bar. The list will automatically populate with agents from the default repository.
 
 ### 2. View Details
-Click on any agent to see its description, author, tags, and version history in a dedicated details panel.
+Click on any agent, skill, or plugin to see its description, author, tags, and version history in a dedicated details panel.
+The panel includes a **Markdown Preview** allowing you to read full READMEs seamlessly with syntax highlighting, alongside a tab for raw content.
 
 ### 3. Install
 Click the **Install** button in the details panel or the download icon in the list.
@@ -65,6 +69,7 @@ Customize your agent sources via VS Code Settings:
 | Setting | Description | Default |
 | :--- | :--- | :--- |
 | `agentManager.repositories` | List of GitHub repo URLs to scan for agents. | `["https://github.com/github/awesome-copilot"]` |
+| `agentManager.pluginSources` | List of GitHub repos to index for Copilot plugins. | `["https://github.com/anthropics/claude-code"]` |
 
 ---
 
