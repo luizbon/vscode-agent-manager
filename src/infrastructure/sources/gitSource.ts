@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as upath from 'upath';
 import * as fs from 'fs';
+import * as vscode from 'vscode';
 import { Agent } from '../../domain/models/agent';
 import { Skill } from '../../domain/models/skill';
 import { AgentParser } from '../../domain/services/agentParser';
@@ -63,7 +64,7 @@ export class GitSource implements IMarketplaceSource {
                 }
             } catch (error) {
                 console.error(`Failed to parse item ${filePath}:`, error);
-                TelemetryService.getInstance().sendError(error as Error, { context: 'itemParse', filePath, repoUrl });
+                TelemetryService.getInstance().sendError(error as Error, { context: 'itemParse', filePath, repoUrl: new vscode.TelemetryTrustedValue(repoUrl) });
                 parseErrors++;
             }
         }
@@ -71,7 +72,7 @@ export class GitSource implements IMarketplaceSource {
         try {
             const urlObj = new URL(repoUrl);
             TelemetryService.getInstance().sendEvent('repository.parse.outcome', {
-                repoUrl,
+                repoUrl: new vscode.TelemetryTrustedValue(repoUrl),
                 host: urlObj.hostname,
                 totalFilesFound: filePaths.length.toString(),
                 parsedAgents: parsedAgents.toString(),
@@ -80,7 +81,7 @@ export class GitSource implements IMarketplaceSource {
             });
         } catch {
             TelemetryService.getInstance().sendEvent('repository.parse.outcome', {
-                repoUrl,
+                repoUrl: new vscode.TelemetryTrustedValue(repoUrl),
                 host: 'unknown',
                 totalFilesFound: filePaths.length.toString(),
                 parsedAgents: parsedAgents.toString(),

@@ -88,7 +88,7 @@ export class TelemetryService {
         return TelemetryService.instance;
     }
 
-    public sendEvent(eventName: string, properties?: { [key: string]: string }, measurements?: { [key: string]: number }): void {
+    public sendEvent(eventName: string, properties?: { [key: string]: string | vscode.TelemetryTrustedValue<string> }, measurements?: { [key: string]: number }): void {
         if (!this.isEnabled) {
             return;
         }
@@ -103,7 +103,7 @@ export class TelemetryService {
         this.posthogReporter?.sendTelemetryEvent(eventName, props, measurements);
     }
 
-    public sendError(error: Error, properties?: { [key: string]: string }, measurements?: { [key: string]: number }): void {
+    public sendError(error: Error, properties?: { [key: string]: string | vscode.TelemetryTrustedValue<string> }, measurements?: { [key: string]: number }): void {
         if (!this.isEnabled) {
             return;
         }
@@ -129,7 +129,7 @@ export class TelemetryService {
     public async traceOperation<T>(
         operationName: string,
         operation: () => Promise<T>,
-        properties?: { [key: string]: string }
+        properties?: { [key: string]: string | vscode.TelemetryTrustedValue<string> }
     ): Promise<T> {
         const traceId = Math.random().toString(36).substring(2, 15);
         const startProps = { ...properties, traceId };
@@ -158,7 +158,7 @@ export class TelemetryService {
      * `$exception_list` directly, which is useful when capturing errors
      * from modules that don't go through the `sendTelemetryErrorEvent` path.
      */
-    public captureException(error: Error, properties?: { [key: string]: string }): void {
+    public captureException(error: Error, properties?: { [key: string]: string | vscode.TelemetryTrustedValue<string> }): void {
         if (!this.isEnabled) {
             return;
         }

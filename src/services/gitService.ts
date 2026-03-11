@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { exec } from 'child_process';
 import { simpleGit, SimpleGit } from 'simple-git';
+import * as vscode from 'vscode';
 import { TelemetryService } from './telemetry';
 
 export class GitService {
@@ -32,7 +33,7 @@ export class GitService {
         return false;
     }
 
-    private reportFatalError(error: any, contextProps: { [key: string]: string }): void {
+    private reportFatalError(error: any, contextProps: { [key: string]: string | vscode.TelemetryTrustedValue<string> }): void {
         const props = { ...contextProps, error: (error as Error).message };
         if (this.isKnownGitError(error)) {
             TelemetryService.getInstance().sendEvent('git_known_error', props);
@@ -131,7 +132,7 @@ export class GitService {
 
             if (!this.useFallback) {
                 console.warn(`Native git clone failed for ${repoUrl}. Falling back to simple-git. Error: ${error}`);
-                TelemetryService.getInstance().sendEvent('native_git_fallback', { context: 'git.clone', repoUrl, error: (error as Error).message });
+                TelemetryService.getInstance().sendEvent('native_git_fallback', { context: 'git.clone', repoUrl: new vscode.TelemetryTrustedValue(repoUrl), error: (error as Error).message });
                 this.useFallback = true;
 
                 // Recreate directory for fallback attempt
@@ -191,7 +192,7 @@ export class GitService {
             const git: SimpleGit = simpleGit({ config: ['safe.directory=*'] });
             await git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch']);
         } catch (error) {
-            this.reportFatalError(error, { context: 'git.cloneFallback', repoUrl });
+            this.reportFatalError(error, { context: 'git.cloneFallback', repoUrl: new vscode.TelemetryTrustedValue(repoUrl) });
             throw error;
         }
     }
