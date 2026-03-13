@@ -64,7 +64,11 @@ export class GitSource implements IMarketplaceSource {
                 }
             } catch (error) {
                 console.error(`Failed to parse item ${filePath}:`, error);
-                TelemetryService.getInstance().sendError(error as Error, { context: 'itemParse', filePath, repoUrl: new vscode.TelemetryTrustedValue(repoUrl) });
+                TelemetryService.getInstance().sendError(error as Error, {
+                    context: 'itemParse',
+                    filePath: new vscode.TelemetryTrustedValue(filePath),
+                    repoUrl: new vscode.TelemetryTrustedValue(repoUrl)
+                });
                 parseErrors++;
             }
         }
@@ -110,7 +114,10 @@ export class GitSource implements IMarketplaceSource {
             }
         } catch (error) {
             console.error(`Error reading directory ${dir}:`, error);
-            TelemetryService.getInstance().sendError(error as Error, { context: 'itemFileDiscovery', dir });
+            TelemetryService.getInstance().sendError(error as Error, {
+                context: 'itemFileDiscovery',
+                dir: new vscode.TelemetryTrustedValue(dir)
+            });
         }
         return results;
     }

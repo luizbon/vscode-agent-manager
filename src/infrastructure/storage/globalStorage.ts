@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import { Agent } from '../../domain/models/agent';
@@ -45,7 +46,13 @@ export class GlobalStorage {
                 const content = fs.readFileSync(fullPath, 'utf8');
                 const agent = AgentParser.parse(content, 'Global', fullPath);
                 if (agent) { agents.push(agent); }
-            } catch (e) { console.error(`Error parsing global agent ${fullPath}:`, e); TelemetryService.getInstance().sendError(e as Error, { context: 'globalStorage.agentParse', filePath: fullPath }); }
+            } catch (e) {
+                console.error(`Error parsing global agent ${fullPath}:`, e);
+                TelemetryService.getInstance().sendError(e as Error, {
+                    context: 'globalStorage.agentParse',
+                    filePath: new vscode.TelemetryTrustedValue(fullPath)
+                });
+            }
         }
 
         // Global Skills (~/.copilot/skills) - skills can be in subdirectories
@@ -55,7 +62,13 @@ export class GlobalStorage {
                 const content = fs.readFileSync(fullPath, 'utf8');
                 const skill = SkillParser.parse(content, 'Global', fullPath);
                 if (skill) { skills.push(skill); }
-            } catch (e) { console.error(`Error parsing global skill ${fullPath}:`, e); TelemetryService.getInstance().sendError(e as Error, { context: 'globalStorage.skillParse', filePath: fullPath }); }
+            } catch (e) {
+                console.error(`Error parsing global skill ${fullPath}:`, e);
+                TelemetryService.getInstance().sendError(e as Error, {
+                    context: 'globalStorage.skillParse',
+                    filePath: new vscode.TelemetryTrustedValue(fullPath)
+                });
+            }
         }
 
         return { agents, skills };

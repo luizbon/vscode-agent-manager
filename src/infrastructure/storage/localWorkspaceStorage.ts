@@ -56,7 +56,13 @@ export class LocalWorkspaceStorage {
                         const content = fs.readFileSync(fullPath, 'utf8');
                         const agent = AgentParser.parse(content, 'Workspace', fullPath);
                         if (agent) { agents.push(agent); }
-                    } catch (e) { console.error(`Error parsing agent ${fullPath}:`, e); TelemetryService.getInstance().sendError(e as Error, { context: 'workspaceStorage.agentParse', filePath: fullPath }); }
+                    } catch (e) {
+                        console.error(`Error parsing agent ${fullPath}:`, e);
+                        TelemetryService.getInstance().sendError(e as Error, {
+                            context: 'workspaceStorage.agentParse',
+                            filePath: new vscode.TelemetryTrustedValue(fullPath)
+                        });
+                    }
                 }
             }
 
@@ -67,7 +73,13 @@ export class LocalWorkspaceStorage {
                         const content = fs.readFileSync(fullPath, 'utf8');
                         const skill = SkillParser.parse(content, 'Workspace', fullPath);
                         if (skill) { skills.push(skill); }
-                    } catch (e) { console.error(`Error parsing skill ${fullPath}:`, e); TelemetryService.getInstance().sendError(e as Error, { context: 'workspaceStorage.skillParse', filePath: fullPath }); }
+                    } catch (e) {
+                        console.error(`Error parsing skill ${fullPath}:`, e);
+                        TelemetryService.getInstance().sendError(e as Error, {
+                            context: 'workspaceStorage.skillParse',
+                            filePath: new vscode.TelemetryTrustedValue(fullPath)
+                        });
+                    }
                 }
             }
         }

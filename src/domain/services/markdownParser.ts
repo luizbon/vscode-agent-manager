@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import * as vscode from 'vscode';
 import { TelemetryService } from '../../services/telemetry';
 
 export interface ParsedMetadata {
@@ -23,7 +24,11 @@ export class MarkdownParser {
                 metadata = yaml.load(match[1]) || {};
             } catch (e) {
                 console.error(`Error parsing YAML in ${filePath}:`, e);
-                TelemetryService.getInstance().sendEvent('yaml_parse_failure', { context: 'yamlParse', filePath, error: (e as Error).message });
+                TelemetryService.getInstance().sendEvent('yaml_parse_failure', {
+                    context: 'yamlParse',
+                    filePath: new vscode.TelemetryTrustedValue(filePath),
+                    error: new vscode.TelemetryTrustedValue((e as Error).message)
+                });
             }
         }
 
