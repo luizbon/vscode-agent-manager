@@ -37,5 +37,20 @@ suite('MarkdownParser Test Suite', () => {
 
         assert.strictEqual(result.name, 'html-skill');
         assert.strictEqual(result.description, 'from comment');
+        assert.strictEqual(result.hasExplicitMetadata, true);
+    });
+
+    test('Should set hasExplicitMetadata to false if no frontmatter or comments', () => {
+        const content = `# Just a README\nSome content.`;
+        const result = MarkdownParser.extractMetadata(content, 'README.md');
+
+        assert.strictEqual(result.hasExplicitMetadata, false);
+    });
+
+    test('Should set hasExplicitMetadata to true if frontmatter present', () => {
+        const content = `---\nname: my-agent\n---\n# My Agent`;
+        const result = MarkdownParser.extractMetadata(content, 'agent.md');
+
+        assert.strictEqual(result.hasExplicitMetadata, true);
     });
 });

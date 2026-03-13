@@ -9,6 +9,7 @@ export interface ParsedMetadata {
     version?: string;
     author?: string;
     tags: string[];
+    hasExplicitMetadata: boolean;
     [key: string]: any;
 }
 
@@ -19,7 +20,10 @@ export class MarkdownParser {
         const match = content.match(frontmatterRegex);
 
         let metadata: any = {};
+        let hasExplicitMetadata = false;
+
         if (match) {
+            hasExplicitMetadata = true;
             try {
                 metadata = yaml.load(match[1]) || {};
             } catch (e) {
@@ -36,6 +40,7 @@ export class MarkdownParser {
         const commentRegex = /<!--\s*(\w+)(?::|\s)\s*(.*?)\s*-->/g;
         let commentMatch;
         while ((commentMatch = commentRegex.exec(content)) !== null) {
+            hasExplicitMetadata = true;
             const key = commentMatch[1].toLowerCase();
             const value = commentMatch[2].trim();
             // Only override if not present in frontmatter
@@ -73,6 +78,7 @@ export class MarkdownParser {
             version: metadata.version?.toString(),
             author: metadata.author?.toString(),
             tags: tags,
+            hasExplicitMetadata
         };
     }
 }

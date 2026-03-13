@@ -135,4 +135,65 @@ suite('GitSource Test Suite', () => {
         // The baseDirectory should be normalized to my-feat regardless of input separators
         assert.strictEqual(args[3], 'my-feat');
     });
+
+    test('should discover agents in regular .md files with frontmatter', async () => {
+        const repoUrl = 'https://github.com/user/repo';
+        const globalStoragePath = '/tmp/storage';
+        const destPath = path.join(globalStoragePath, 'repos', 'repo_hash');
+
+        const { GitService } = require('../services/gitService');
+        sandbox.stub(GitService.prototype, 'getRepoDirName').returns('repo_hash');
+        sandbox.stub(GitService.prototype, 'cloneOrPullRepo').resolves();
+
+        const agentPath = path.join(destPath, 'frontend-developer.md');
+        sandbox.stub(gitSource as any, 'findFiles').resolves([agentPath]);
+
+        sandbox.stub(fs.promises, 'readFile').resolves('---\nname: frontend-developer\ndescription: A frontend pro\n---\n# Content');
+        
+        const result = await gitSource.fetchItems(repoUrl, globalStoragePath);
+
+        assert.strictEqual(result.agents.length, 1);
+        assert.strictEqual(result.agents[0].name, 'frontend-developer');
+    });
+
+    test('should ignore regular .md files without metadata', async () => {
+        const repoUrl = 'https://github.com/user/repo';
+        const globalStoragePath = '/tmp/storage';
+        const destPath = path.join(globalStoragePath, 'repos', 'repo_hash');
+
+        const { GitService } = require('../services/gitService');
+        sandbox.stub(GitService.prototype, 'getRepoDirName').returns('repo_hash');
+        sandbox.stub(GitService.prototype, 'cloneOrPullRepo').resolves();
+
+        const readmePath = path.join(destPath, 'README.md');
+        sandbox.stub(gitSource as any, 'findFiles').resolves([readmePath]);
+
+        sandbox.stub(fs.promises, 'readFile').resolves('# Repository\nSome description.');
+        
+        const result = await gitSource.fetchItems(repoUrl, globalStoragePath);
+
+        assert.strictEqual(result.agents.length, 0);
+        assert.strictEqual(result.skills.length, 0);
+    });
+
+    test('should respect "type: skill" in regular .md files', async () => {
+        const repoUrl = 'https://github.com/user/repo';
+        const globalStoragePath = '/tmp/storage';
+        const destPath = path.join(globalStoragePath, 'repos', 'repo_hash');
+
+        const { GitService } = require('../services/gitService');
+        sandbox.stub(GitService.prototype, 'getRepoDirName').returns('repo_hash');
+        sandbox.stub(GitService.prototype, 'cloneOrPullRepo').resolves();
+
+        const skillPath = path.join(destPath, 'my-skill.md');
+        sandbox.stub(gitSource as any, 'findFiles').resolves([skillPath]);
+
+        sandbox.stub(fs.promises, 'readFile').resolves('---\nname: my-skill\ntype: skill\n---\n# Content');
+        
+        const result = await gitSource.fetchItems(repoUrl, globalStoragePath);
+
+        assert.strictEqual(result.agents.length, 0);
+        assert.strictEqual(result.skills.length, 1);
+        assert.strictEqual(result.skills[0].name, 'my-skill');
+    });
 });

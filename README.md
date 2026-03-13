@@ -21,7 +21,7 @@
 ## 🚀 Features
 
 ### 🔍 Auto-Discovery from any Git Repo
-Stop manually hunting for configurations. Point the Agent Manager to **any GitHub repository** (like the popular `awesome-copilot` lists or your own team's private repo), and it will automatically index all available items. It recursively scans the repository looking for `.agent.md`, `.skill.md`, or `SKILL.md` files, parsing their YAML frontmatter or HTML comments to extract descriptions, authors, and tags.
+Stop manually hunting for configurations. Point the Agent Manager to **any GitHub repository** (like the popular `awesome-copilot` lists or your own team's private repo), and it will automatically index all available items. It recursively scans the repository for dedicated files (`.agent.md`, `.skill.md`, `SKILL.md`) or **any markdown file** containing YAML frontmatter or HTML comment metadata, automatically extracting descriptions, authors, and tags.
 
 ### 🧠 Skills Management
 In addition to agents, the extension supports the discovery and management of **Skills**. A skill is a reusable set of instructions or context that can be attached to agents. The extension automatically discovers skills in your configured repositories and allows you to install and manage them alongside your agents.

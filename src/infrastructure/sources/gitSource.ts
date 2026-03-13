@@ -60,6 +60,13 @@ export class GitSource implements IMarketplaceSource {
                     if (agent) {
                         agents.push(agent);
                         parsedAgents++;
+                    } else {
+                        // Try parsing as skill if it's a generic .md file and failed as agent
+                        const skill = SkillParser.parse(content, repoUrl, filePath, baseDirectory);
+                        if (skill) {
+                            skills.push(skill);
+                            parsedSkills++;
+                        }
                     }
                 }
             } catch (error) {
@@ -108,7 +115,7 @@ export class GitSource implements IMarketplaceSource {
                     if (entry.name !== '.git') {
                         results.push(...await this.findFiles(fullPath));
                     }
-                } else if (entry.name.endsWith('.agent.md') || entry.name.endsWith('.skill.md') || entry.name === 'SKILL.md') {
+                } else if (entry.name.toLowerCase().endsWith('.md')) {
                     results.push(fullPath);
                 }
             }
