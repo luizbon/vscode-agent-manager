@@ -9,6 +9,20 @@ import { TelemetryService } from './telemetry';
 export class GitService {
     private useFallback = false;
     private static readonly pathLocks = new Map<string, Promise<void>>();
+    private static readonly GIT_CONFIG = ['-c', 'safe.directory=*', '-c', 'core.longpaths=true'];
+    private static readonly SIMPLE_GIT_CONFIG = ['safe.directory=*', 'core.longpaths=true'];
+
+    private getSimpleGit(baseDir?: string): SimpleGit {
+        return simpleGit({
+            baseDir,
+            config: GitService.SIMPLE_GIT_CONFIG
+        });
+    }
+
+    private async gitExec(args: string, cwd?: string): Promise<string> {
+        const configStr = GitService.GIT_CONFIG.join(' ');
+        return this.execCommand(`git ${configStr} ${args}`, cwd);
+    }
 
     private isKnownGitError(error: any): boolean {
         if (!error) {
@@ -28,6 +42,22 @@ export class GitService {
             return true;
         }
         if (msg.includes('could not read')) {
+            return true;
+        }
+        // New known errors to reduce noise in error tracker
+        if (msg.includes('dubious ownership')) {
+            return true;
+        }
+        if (msg.includes('does not exist')) {
+            return true;
+        }
+        if (msg.includes('not a git repository')) {
+            return true;
+        }
+        if (msg.includes('not a valid repository')) {
+            return true;
+        }
+        if (msg.includes('filename too long')) {
             return true;
         }
         return false;
@@ -117,7 +147,7 @@ export class GitService {
         try {
             if (!this.useFallback) {
                 // Native git clone creates the directory itself
-                await this.execCommand(`git -c safe.directory=* clone --depth 1 --single-branch "${repoUrl}" "${destPath}"`);
+                await this.gitExec(`clone --depth 1 --single-branch "${repoUrl}" "${destPath}"`);
             } else {
                 if (!dirExistedBefore) {
                     await fs.promises.mkdir(destPath, { recursive: true });
@@ -150,8 +180,8 @@ export class GitService {
         this.removeGitLockFiles(destPath);
         try {
             if (!this.useFallback) {
-                await this.execCommand(`git -c safe.directory=* fetch --depth 1`, destPath);
-                await this.execCommand(`git -c safe.directory=* reset --hard origin/HEAD`, destPath);
+                await this.gitExec(`fetch --depth 1`, destPath);
+                await this.gitExec(`reset --hard origin/HEAD`, destPath);
             } else {
                 await this.pullFallback(destPath);
             }
@@ -189,7 +219,7 @@ export class GitService {
 
     private async cloneFallback(repoUrl: string, destPath: string): Promise<void> {
         try {
-            const git: SimpleGit = simpleGit({ config: ['safe.directory=*'] });
+            const git = this.getSimpleGit();
             await git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch']);
         } catch (error) {
             this.reportFatalError(error, { context: 'git.cloneFallback', repoUrl: new vscode.TelemetryTrustedValue(repoUrl) });
@@ -199,7 +229,7 @@ export class GitService {
 
     private async pullFallback(destPath: string): Promise<void> {
         try {
-            const git: SimpleGit = simpleGit({ baseDir: destPath, config: ['safe.directory=*'] });
+            const git = this.getSimpleGit(destPath);
             await git.fetch(['--depth', '1']);
             await git.raw(['reset', '--hard', 'origin/HEAD']);
         } catch (error) {
@@ -211,7 +241,7 @@ export class GitService {
     public async mergeUpdate(currentFile: string, baseFile: string, newFile: string): Promise<boolean> {
         try {
             if (!this.useFallback) {
-                await this.execCommand(`git -c safe.directory=* merge-file "${currentFile}" "${baseFile}" "${newFile}"`);
+                await this.gitExec(`merge-file "${currentFile}" "${baseFile}" "${newFile}"`);
                 return true;
             } else {
                 return await this.mergeUpdateFallback(currentFile, baseFile, newFile);
@@ -235,7 +265,7 @@ export class GitService {
         try {
             // simple-git allows raw commands, so we run merge-file directly through it
             // We pass a dummy path just to init simpleGit, since merge-file doesn't need a git repo cwd
-            const git: SimpleGit = simpleGit({ baseDir: path.dirname(currentFile), config: ['safe.directory=*'] });
+            const git = this.getSimpleGit(path.dirname(currentFile));
             await git.raw(['merge-file', path.basename(currentFile), baseFile, newFile]);
             return true;
         } catch (error: any) {
@@ -253,7 +283,7 @@ export class GitService {
     public async getHeadSha(repoDir: string): Promise<string> {
         try {
             if (!this.useFallback) {
-                const stdout = await this.execCommand(`git -c safe.directory=* rev-parse HEAD`, repoDir);
+                const stdout = await this.gitExec(`rev-parse HEAD`, repoDir);
                 return stdout.trim();
             } else {
                 return await this.getHeadShaFallback(repoDir);
@@ -268,7 +298,7 @@ export class GitService {
 
     private async getHeadShaFallback(repoDir: string): Promise<string> {
         try {
-            const git: SimpleGit = simpleGit({ baseDir: repoDir, config: ['safe.directory=*'] });
+            const git = this.getSimpleGit(repoDir);
             const sha = await git.revparse(['HEAD']);
             return sha.trim();
         } catch (error) {
@@ -286,7 +316,7 @@ export class GitService {
             if (!this.useFallback) {
                 // Ensure correct relative path separators for git command
                 const gitPath = relativePath.replace(/\\/g, '/');
-                const stdout = await this.execCommand(`git -c safe.directory=* show ${sha}:"${gitPath}"`, repoDir);
+                const stdout = await this.gitExec(`show ${sha}:"${gitPath}"`, repoDir);
                 return stdout;
             } else {
                 return await this.getFileContentAtShaFallback(repoDir, sha, relativePath);
@@ -301,7 +331,7 @@ export class GitService {
 
     private async getFileContentAtShaFallback(repoDir: string, sha: string, relativePath: string): Promise<string> {
         try {
-            const git: SimpleGit = simpleGit({ baseDir: repoDir, config: ['safe.directory=*'] });
+            const git = this.getSimpleGit(repoDir);
             const gitPath = relativePath.replace(/\\/g, '/');
             const content = await git.show([`${sha}:${gitPath}`]);
             return content;
@@ -332,7 +362,7 @@ export class GitService {
 
         try {
             if (!this.useFallback) {
-                const stdout = await this.execCommand(`git -c safe.directory=* rev-parse --show-toplevel`, dir);
+                const stdout = await this.gitExec(`rev-parse --show-toplevel`, dir);
                 return stdout.trim();
             } else {
                 return await this.getRepoRootFallback(dir);
@@ -347,7 +377,7 @@ export class GitService {
 
     private async getRepoRootFallback(dir: string): Promise<string> {
         try {
-            const git: SimpleGit = simpleGit({ baseDir: dir, config: ['safe.directory=*'] });
+            const git = this.getSimpleGit(dir);
             const root = await git.revparse(['--show-toplevel']);
             return root.trim();
         } catch (error) {

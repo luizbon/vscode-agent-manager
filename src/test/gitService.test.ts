@@ -22,6 +22,36 @@ suite("GitService Test Suite", () => {
         sandbox.restore();
     });
 
+    suite("isKnownGitError", () => {
+        test("identifies standard spawn git ENOENT", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("ENOENT: spawn git")), true);
+        });
+
+        test("identifies dubious ownership error", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("fatal: detected dubious ownership in repository")), true);
+        });
+
+        test("identifies repository does not exist error", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("fatal: repository 'some-url' does not exist")), true);
+        });
+
+        test("identifies not a git repository error", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("fatal: not a git repository")), true);
+        });
+
+        test("identifies not a valid repository error", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("not a valid repository")), true);
+        });
+
+        test("identifies filename too long error", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("fatal: cannot create directory at '...': Filename too long")), true);
+        });
+
+        test("returns false for unknown errors", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("Something else happened")), false);
+        });
+    });
+
     suite("getRepoDirName", () => {
         test("returns formatted dir name for standard GitHub URL", () => {
             const dirName = gitService.getRepoDirName(
@@ -65,7 +95,7 @@ suite("GitService Test Suite", () => {
 
             assert.ok(
                 execStub.calledWith(
-                    `git -c safe.directory=* clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
+                    `git -c safe.directory=* -c core.longpaths=true clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
                 )
             );
         });
@@ -97,9 +127,9 @@ suite("GitService Test Suite", () => {
 
             await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
-            assert.ok(execStub.calledWith("git -c safe.directory=* fetch --depth 1", DEST));
+            assert.ok(execStub.calledWith("git -c safe.directory=* -c core.longpaths=true fetch --depth 1", DEST));
             assert.ok(
-                execStub.calledWith("git -c safe.directory=* reset --hard origin/HEAD", DEST)
+                execStub.calledWith("git -c safe.directory=* -c core.longpaths=true reset --hard origin/HEAD", DEST)
             );
         });
 
@@ -131,7 +161,7 @@ suite("GitService Test Suite", () => {
             assert.ok(rmStub.calledWith(DEST, { recursive: true, force: true }));
             assert.ok(
                 execStub.calledWith(
-                    `git -c safe.directory=* clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
+                    `git -c safe.directory=* -c core.longpaths=true clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
                 )
             );
         });
