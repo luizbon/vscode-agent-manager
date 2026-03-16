@@ -175,7 +175,10 @@ export class TelemetryService {
             'common.vscodeversion': vscode.version,
             'common.extensionversion': vscode.extensions.getExtension('luizbon.vscode-agent-manager')?.packageJSON.version || 'unknown',
             'common.remotename': vscode.env.remoteName || 'local',
-            'common.sessionid': vscode.env.sessionId
+            'common.sessionid': vscode.env.sessionId,
+            'common.language': vscode.env.language,
+            'common.uikind': vscode.UIKind[vscode.env.uiKind],
+            'common.appname': vscode.env.appName
         };
     }
 
