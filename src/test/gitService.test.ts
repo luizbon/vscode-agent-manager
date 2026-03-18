@@ -93,10 +93,19 @@ suite("GitService Test Suite", () => {
 
             await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
+            // Step 1: --no-checkout clone
             assert.ok(
                 execStub.calledWith(
-                    `git -c safe.directory=* -c core.longpaths=true clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
+                    `git -c safe.directory=* -c core.longpaths=true clone --depth 1 --single-branch --no-checkout "https://github.com/o/r" "${DEST}"`
                 )
+            );
+            // Step 2: configure local repo (core.longpaths)
+            assert.ok(
+                execStub.calledWith(`git -c safe.directory=* -c core.longpaths=true config core.longpaths true`, DEST)
+            );
+            // Step 3: checkout after local config is applied
+            assert.ok(
+                execStub.calledWith(`git -c safe.directory=* -c core.longpaths=true checkout HEAD -- .`, DEST)
             );
         });
 
@@ -159,10 +168,14 @@ suite("GitService Test Suite", () => {
             await gitService.cloneOrPullRepo("https://github.com/o/r", DEST);
 
             assert.ok(rmStub.calledWith(DEST, { recursive: true, force: true }));
+            // Should use the new --no-checkout clone strategy
             assert.ok(
                 execStub.calledWith(
-                    `git -c safe.directory=* -c core.longpaths=true clone --depth 1 --single-branch "https://github.com/o/r" "${DEST}"`
+                    `git -c safe.directory=* -c core.longpaths=true clone --depth 1 --single-branch --no-checkout "https://github.com/o/r" "${DEST}"`
                 )
+            );
+            assert.ok(
+                execStub.calledWith(`git -c safe.directory=* -c core.longpaths=true checkout HEAD -- .`, DEST)
             );
         });
 
@@ -270,6 +283,23 @@ suite("GitService Test Suite", () => {
             await assert.rejects(
                 gitService.getFileContentAtSha("/repo", "invalid-sha", "file.txt"),
                 /Invalid git SHA provided/
+            );
+        });
+    });
+
+    suite("applyLocalRepoConfig", () => {
+        test("sets core.longpaths and safe.directory via git config", async () => {
+            const execStub = sandbox.stub(gitService as any, "execCommand").resolves("");
+
+            await (gitService as any).applyLocalRepoConfig(DEST);
+
+            assert.ok(
+                execStub.calledWith(`git -c safe.directory=* -c core.longpaths=true config core.longpaths true`, DEST),
+                "Should set core.longpaths=true in local repo config"
+            );
+            assert.ok(
+                execStub.calledWith(`git -c safe.directory=* -c core.longpaths=true config safe.directory "${DEST}"`, DEST),
+                "Should set safe.directory in local repo config"
             );
         });
     });

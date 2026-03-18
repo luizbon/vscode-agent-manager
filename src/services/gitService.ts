@@ -146,8 +146,13 @@ export class GitService {
         const dirExistedBefore = fs.existsSync(destPath);
         try {
             if (!this.useFallback) {
-                // Native git clone creates the directory itself
-                await this.gitExec(`clone --depth 1 --single-branch "${repoUrl}" "${destPath}"`);
+                // Use --no-checkout so we can configure core.longpaths before files are written.
+                // This prevents "Filename too long" errors on Windows during the checkout phase.
+                await this.gitExec(`clone --depth 1 --single-branch --no-checkout "${repoUrl}" "${destPath}"`);
+                // Configure the local repository so settings persist for all future operations.
+                await this.applyLocalRepoConfig(destPath);
+                // Now perform the checkout with the proper settings in place.
+                await this.gitExec(`checkout HEAD -- .`, destPath);
             } else {
                 if (!dirExistedBefore) {
                     await fs.promises.mkdir(destPath, { recursive: true });
@@ -174,6 +179,17 @@ export class GitService {
                 throw error;
             }
         }
+    }
+
+    /**
+     * Writes repository-local git config to ensure long path and safe directory
+     * settings are persisted for all subsequent operations on this repo.
+     * This is necessary because CLI `-c` flags only apply to the current process,
+     * not to the local repository configuration.
+     */
+    private async applyLocalRepoConfig(repoDir: string): Promise<void> {
+        await this.gitExec(`config core.longpaths true`, repoDir);
+        await this.gitExec(`config safe.directory "${repoDir}"`, repoDir);
     }
 
     private async pull(destPath: string): Promise<void> {
@@ -220,7 +236,13 @@ export class GitService {
     private async cloneFallback(repoUrl: string, destPath: string): Promise<void> {
         try {
             const git = this.getSimpleGit();
-            await git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch']);
+            // Use --no-checkout so we can configure core.longpaths before files are written.
+            await git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch', '--no-checkout']);
+            // Apply local repo config before checking out files.
+            const repoGit = this.getSimpleGit(destPath);
+            await repoGit.addConfig('core.longpaths', 'true');
+            await repoGit.addConfig('safe.directory', destPath);
+            await repoGit.checkout('HEAD');
         } catch (error) {
             this.reportFatalError(error, { context: 'git.cloneFallback', repoUrl: new vscode.TelemetryTrustedValue(repoUrl) });
             throw error;
