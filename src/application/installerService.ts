@@ -131,6 +131,14 @@ export class InstallerService {
     }
 
     public async installItem(item: IMarketplaceItem, installBasePath: string): Promise<void> {
+        const installDir = path.dirname(item.installUrl);
+        if (!fs.existsSync(installDir)) {
+            throw new Error(
+                `Cannot install '${item.name}': the source directory no longer exists (${installDir}). ` +
+                `Please refresh the plugin list and try again.`
+            );
+        }
+
         const gitService = new GitService();
         let repoRoot = '';
         let currentSha = '';

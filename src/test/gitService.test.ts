@@ -278,6 +278,73 @@ suite("GitService Test Suite", () => {
         });
     });
 
+    suite("pullFallback", () => {
+        test("removes stale lock files before git operations", async () => {
+            const existsSyncStub = sandbox.stub(fs, "existsSync");
+            // Simulate a stale index.lock left by a failed native pull
+            existsSyncStub
+                .withArgs(path.join(DEST, ".git", "index.lock"))
+                .returns(true);
+            existsSyncStub
+                .withArgs(path.join(DEST, ".git", "shallow.lock"))
+                .returns(false);
+            existsSyncStub
+                .withArgs(path.join(DEST, ".git", "HEAD.lock"))
+                .returns(false);
+
+            const unlinkSyncStub = sandbox.stub(fs, "unlinkSync");
+            sandbox.stub(console, "warn");
+
+            // Stub simple-git to resolve immediately
+            const addConfigStub = sandbox.stub().resolves({ catch: () => Promise.resolve() });
+            const fetchStub = sandbox.stub().resolves({});
+            const rawStub = sandbox.stub().resolves("");
+            sandbox.stub(gitService as any, "getSimpleGit").returns({
+                addConfig: addConfigStub,
+                fetch: fetchStub,
+                raw: rawStub,
+            });
+
+            await (gitService as any).pullFallback(DEST);
+
+            assert.ok(
+                unlinkSyncStub.calledWith(path.join(DEST, ".git", "index.lock")),
+                "Should remove the stale index.lock file"
+            );
+        });
+
+        test("applies core.longpaths and safe.directory config before fetch", async () => {
+            sandbox.stub(fs, "existsSync").returns(false);
+            sandbox.stub(console, "warn");
+
+            const addConfigStub = sandbox.stub().returns({ catch: () => Promise.resolve() });
+            const fetchStub = sandbox.stub().resolves({});
+            const rawStub = sandbox.stub().resolves("");
+            sandbox.stub(gitService as any, "getSimpleGit").returns({
+                addConfig: addConfigStub,
+                fetch: fetchStub,
+                raw: rawStub,
+            });
+
+            await (gitService as any).pullFallback(DEST);
+
+            // addConfig should be called for core.longpaths and safe.directory
+            assert.ok(
+                addConfigStub.calledWith("core.longpaths", "true"),
+                "Should apply core.longpaths=true before fetch"
+            );
+            assert.ok(
+                addConfigStub.calledWith("safe.directory", DEST),
+                "Should apply safe.directory before fetch"
+            );
+            // Config must be set before fetch is called
+            assert.ok(
+                addConfigStub.calledBefore(fetchStub),
+                "addConfig should be called before fetch"
+            );
+        });
+    });
+
     suite("getFileContentAtSha", () => {
         test("rejects invalid SHA format", async () => {
             await assert.rejects(

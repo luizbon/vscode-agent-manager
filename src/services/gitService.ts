@@ -250,8 +250,15 @@ export class GitService {
     }
 
     private async pullFallback(destPath: string): Promise<void> {
+        // Remove any stale lock files left by a previously failed native operation.
+        this.removeGitLockFiles(destPath);
         try {
             const git = this.getSimpleGit(destPath);
+            // Ensure core.longpaths and safe.directory are configured locally so that
+            // repos cloned by older extension versions (which did not write local config)
+            // do not fail with "Filename too long" on Windows during reset --hard.
+            await git.addConfig('core.longpaths', 'true').catch(() => { });
+            await git.addConfig('safe.directory', destPath).catch(() => { });
             await git.fetch(['--depth', '1']);
             await git.raw(['reset', '--hard', 'origin/HEAD']);
         } catch (error) {

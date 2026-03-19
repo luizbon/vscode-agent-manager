@@ -123,4 +123,35 @@ suite('InstallerService Test Suite', () => {
         const expectedSrcPath = path.dirname(item.installUrl);
         assert.strictEqual(copyDirStub.calledOnceWith(expectedSrcPath, expectedDestPath), true, `Expected skill directory to be copied to ${expectedDestPath}`);
     });
+    test('should throw a descriptive error when installUrl directory does not exist', async () => {
+        const item: IMarketplaceItem = {
+            id: 'repo:agents/stale-agent.agent.md',
+            type: 'agent',
+            name: 'Stale Agent',
+            description: 'Test',
+            repository: 'https://github.com/user/repo',
+            path: 'agents/stale-agent.agent.md',
+            installUrl: '/non/existent/path/stale-agent.agent.md'
+        };
+        const installBasePath = '/work/project/.github/agents';
+
+        // The default setup stubs fs.existsSync to return true, so we need to override
+        // for the specific directory check performed by installItem.
+        (fs.existsSync as sinon.SinonStub).restore();
+        sandbox.stub(fs, 'existsSync').callsFake((p: fs.PathLike) => {
+            if (p === path.dirname(item.installUrl)) {
+                return false;
+            }
+            return true;
+        });
+
+        await assert.rejects(
+            installerService.installItem(item, installBasePath),
+            (err: Error) => {
+                assert.ok(err.message.includes('source directory no longer exists'), `Unexpected error: ${err.message}`);
+                assert.ok(err.message.includes('Stale Agent'));
+                return true;
+            }
+        );
+    });
 });
