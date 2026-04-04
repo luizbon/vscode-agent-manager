@@ -163,7 +163,14 @@ export function activate(context: vscode.ExtensionContext) {
                 const msg = (error as Error).message || '';
                 console.error(`Error searching ${repo}:`, error);
                 if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('does not exist')) {
-                  vscode.window.showErrorMessage(`Repository not found: "${repo}". Please check the URL in your settings.`);
+                  vscode.window.showErrorMessage(
+                    `Repository not found: "${repo}". If the URL is correct, the repository may be private — please ensure your Git credentials have access to it.`,
+                    'Configure Git Credentials'
+                  ).then(selection => {
+                    if (selection === 'Configure Git Credentials') {
+                      vscode.commands.executeCommand('vscode.open', vscode.Uri.parse('https://git-scm.com/docs/gitcredentials'));
+                    }
+                  });
                 } else if (msg.toLowerCase().includes('spawn git') && msg.toLowerCase().includes('enoent')) {
                   vscode.window.showErrorMessage('Git is not found in your PATH. Please install Git and restart VS Code.');
                 } else {
