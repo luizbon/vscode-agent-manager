@@ -34,7 +34,7 @@ export class DetailsPanel {
                     month: 'long',
                     day: 'numeric'
                 });
-                this._panel.webview.postMessage({ command: 'updateDate', date: formattedDate });
+                this.postMessage({ command: 'updateDate', date: formattedDate });
             });
         } catch (e) {
             console.error('Error fetching commit date:', e);
@@ -47,6 +47,7 @@ export class DetailsPanel {
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
     private _item: IMarketplaceItem;
+    private _isDisposed = false;
 
     public static createOrShow(context: vscode.ExtensionContext, item: IMarketplaceItem, searchTerm?: string) {
         const column = vscode.window.activeTextEditor
@@ -92,7 +93,7 @@ export class DetailsPanel {
                         this.checkInstallationStatus(this._item);
                         try {
                             const content = await this.fetchUrl(this._item.installUrl);
-                            this._panel.webview.postMessage({ command: 'updateContent', content });
+                            this.postMessage({ command: 'updateContent', content });
                         } catch (e: any) {
                             const isNotFoundError = e.message && (e.message.includes('File not found') || e.code === 'ENOENT');
 
@@ -104,7 +105,7 @@ export class DetailsPanel {
                                 ? 'Content is not yet available locally. Please try installing or updating this item.'
                                 : 'Failed to load content: ' + e.message;
 
-                            this._panel.webview.postMessage({ command: 'updateContent', content: friendlyError });
+                            this.postMessage({ command: 'updateContent', content: friendlyError });
                         }
                         return;
                     case 'showDiff':
@@ -219,7 +220,7 @@ export class DetailsPanel {
         }
 
         if (!localPath) {
-            this._panel.webview.postMessage({ command: 'updateStatus', status: 'not-installed' });
+            this.postMessage({ command: 'updateStatus', status: 'not-installed' });
             return;
         }
 
@@ -228,9 +229,9 @@ export class DetailsPanel {
             const remoteContent = await this.fetchUrl(item.installUrl);
 
             if (localContent === remoteContent) {
-                this._panel.webview.postMessage({ command: 'updateStatus', status: 'installed', localPath });
+                this.postMessage({ command: 'updateStatus', status: 'installed', localPath });
             } else {
-                this._panel.webview.postMessage({ command: 'updateStatus', status: 'update-available', localPath });
+                this.postMessage({ command: 'updateStatus', status: 'update-available', localPath });
             }
         } catch (e) {
             console.error('Failed to compare installation status', e);
@@ -239,6 +240,7 @@ export class DetailsPanel {
     }
 
     public dispose() {
+        this._isDisposed = true;
         DetailsPanel.currentPanel = undefined;
         this._panel.dispose();
         while (this._disposables.length) {
@@ -246,6 +248,12 @@ export class DetailsPanel {
             if (x) {
                 x.dispose();
             }
+        }
+    }
+
+    private postMessage(message: { command: string; [key: string]: unknown }): void {
+        if (!this._isDisposed) {
+            this._panel.webview.postMessage(message);
         }
     }
 

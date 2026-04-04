@@ -12,6 +12,36 @@ export class GitService {
     private static readonly GIT_CONFIG = ['-c', 'safe.directory=*', '-c', 'core.longpaths=true'];
     private static readonly SIMPLE_GIT_CONFIG = ['safe.directory=*', 'core.longpaths=true'];
 
+    /**
+     * Run once at extension startup. Ensures git is accessible and the global
+     * safe.directory wildcard is set so that ownership mismatches on Windows
+     * do not block git operations on extension-managed repos.
+     */
+    public static async ensureGitEnvironment(): Promise<void> {
+        await new Promise<void>((resolve) => {
+            exec('git --version', (error) => {
+                if (error) {
+                    vscode.window.showWarningMessage(
+                        'Git is not found in your PATH. The Agent Manager extension requires Git to clone repositories. ' +
+                        'Please [install Git](https://git-scm.com/downloads) and restart VS Code.'
+                    );
+                }
+                resolve();
+            });
+        });
+
+        // Set global safe.directory=* so git does not refuse to operate on
+        // directories owned by a different Windows user (e.g. SYSTEM vs current user).
+        await new Promise<void>((resolve) => {
+            exec('git config --global safe.directory "*"', (error) => {
+                if (error) {
+                    console.warn('Could not set global safe.directory:', error.message);
+                }
+                resolve();
+            });
+        });
+    }
+
     private getSimpleGit(baseDir?: string): SimpleGit {
         return simpleGit({
             baseDir,
@@ -22,6 +52,38 @@ export class GitService {
     private async gitExec(args: string, cwd?: string): Promise<string> {
         const configStr = GitService.GIT_CONFIG.join(' ');
         return this.execCommand(`git ${configStr} ${args}`, cwd);
+    }
+
+    private isTransientNetworkError(error: any): boolean {
+        const msg = (error?.message || '').toLowerCase();
+        return (
+            msg.includes('http2 framing') ||
+            msg.includes('unable to access') ||
+            msg.includes('could not resolve host') ||
+            msg.includes('operation timed out') ||
+            msg.includes('connection reset') ||
+            msg.includes('connection refused') ||
+            msg.includes('recv failure') ||
+            msg.includes('curl error')
+        );
+    }
+
+    private async withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await fn();
+            } catch (error) {
+                lastError = error;
+                if (!this.isTransientNetworkError(error) || attempt === maxAttempts) {
+                    throw error;
+                }
+                const delayMs = attempt * 1000;
+                console.warn(`Transient network error on attempt ${attempt}/${maxAttempts}, retrying in ${delayMs}ms: ${(error as Error).message}`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+        throw lastError;
     }
 
     private isKnownGitError(error: any): boolean {
@@ -44,11 +106,13 @@ export class GitService {
         if (msg.includes('could not read')) {
             return true;
         }
-        // New known errors to reduce noise in error tracker
         if (msg.includes('dubious ownership')) {
             return true;
         }
         if (msg.includes('does not exist')) {
+            return true;
+        }
+        if (msg.includes('not found')) {
             return true;
         }
         if (msg.includes('not a git repository')) {
@@ -58,6 +122,21 @@ export class GitService {
             return true;
         }
         if (msg.includes('filename too long')) {
+            return true;
+        }
+        if (msg.includes('http2 framing')) {
+            return true;
+        }
+        if (msg.includes('unable to access') && msg.includes('curl')) {
+            return true;
+        }
+        if (msg.includes('could not resolve host')) {
+            return true;
+        }
+        if (msg.includes('operation timed out')) {
+            return true;
+        }
+        if (msg.includes('ssl certificate')) {
             return true;
         }
         return false;
@@ -148,7 +227,7 @@ export class GitService {
             if (!this.useFallback) {
                 // Use --no-checkout so we can configure core.longpaths before files are written.
                 // This prevents "Filename too long" errors on Windows during the checkout phase.
-                await this.gitExec(`clone --depth 1 --single-branch --no-checkout "${repoUrl}" "${destPath}"`);
+                await this.withRetry(() => this.gitExec(`clone --depth 1 --single-branch --no-checkout "${repoUrl}" "${destPath}"`));
                 // Configure the local repository so settings persist for all future operations.
                 await this.applyLocalRepoConfig(destPath);
                 // Now perform the checkout with the proper settings in place.
@@ -196,7 +275,7 @@ export class GitService {
         this.removeGitLockFiles(destPath);
         try {
             if (!this.useFallback) {
-                await this.gitExec(`fetch --depth 1`, destPath);
+                await this.withRetry(() => this.gitExec(`fetch --depth 1`, destPath));
                 await this.gitExec(`reset --hard origin/HEAD`, destPath);
             } else {
                 await this.pullFallback(destPath);
@@ -237,7 +316,7 @@ export class GitService {
         try {
             const git = this.getSimpleGit();
             // Use --no-checkout so we can configure core.longpaths before files are written.
-            await git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch', '--no-checkout']);
+            await this.withRetry(() => git.clone(repoUrl, destPath, ['--depth', '1', '--single-branch', '--no-checkout']));
             // Apply local repo config before checking out files.
             const repoGit = this.getSimpleGit(destPath);
             await repoGit.addConfig('core.longpaths', 'true');
@@ -259,7 +338,7 @@ export class GitService {
             // do not fail with "Filename too long" on Windows during reset --hard.
             await git.addConfig('core.longpaths', 'true').catch(() => { });
             await git.addConfig('safe.directory', destPath).catch(() => { });
-            await git.fetch(['--depth', '1']);
+            await this.withRetry(() => git.fetch(['--depth', '1']));
             await git.raw(['reset', '--hard', 'origin/HEAD']);
         } catch (error) {
             this.reportFatalError(error, { context: 'git.pullFallback', destPath });

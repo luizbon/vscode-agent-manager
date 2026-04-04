@@ -47,8 +47,79 @@ suite("GitService Test Suite", () => {
             assert.strictEqual((gitService as any).isKnownGitError(new Error("fatal: cannot create directory at '...': Filename too long")), true);
         });
 
+        test("identifies repository not found error", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("fatal: repository 'https://github.com/owner/bad-repo' not found")), true);
+        });
+
+        test("identifies HTTP2 framing error", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("fatal: unable to access 'https://github.com/owner/repo': Error in the HTTP2 framing layer")), true);
+        });
+
+        test("identifies could not resolve host error", () => {
+            assert.strictEqual((gitService as any).isKnownGitError(new Error("fatal: unable to access 'https://github.com/owner/repo': Could not resolve host: github.com")), true);
+        });
+
         test("returns false for unknown errors", () => {
             assert.strictEqual((gitService as any).isKnownGitError(new Error("Something else happened")), false);
+        });
+    });
+
+    suite("isTransientNetworkError", () => {
+        test("identifies HTTP2 framing as transient", () => {
+            assert.strictEqual((gitService as any).isTransientNetworkError(new Error("Error in the HTTP2 framing layer")), true);
+        });
+
+        test("identifies connection reset as transient", () => {
+            assert.strictEqual((gitService as any).isTransientNetworkError(new Error("connection reset by peer")), true);
+        });
+
+        test("identifies operation timed out as transient", () => {
+            assert.strictEqual((gitService as any).isTransientNetworkError(new Error("Operation timed out")), true);
+        });
+
+        test("does not classify repository not found as transient", () => {
+            assert.strictEqual((gitService as any).isTransientNetworkError(new Error("repository not found")), false);
+        });
+    });
+
+    suite("withRetry", () => {
+        test("returns result immediately on success", async () => {
+            const result = await (gitService as any).withRetry(() => Promise.resolve('ok'));
+            assert.strictEqual(result, 'ok');
+        });
+
+        test("retries on transient network error and succeeds", async () => {
+            let calls = 0;
+            const result = await (gitService as any).withRetry(async () => {
+                calls++;
+                if (calls < 3) {
+                    throw new Error('Error in the HTTP2 framing layer');
+                }
+                return 'done';
+            }, 3);
+            assert.strictEqual(result, 'done');
+            assert.strictEqual(calls, 3);
+        });
+
+        test("does not retry on non-transient error", async () => {
+            let calls = 0;
+            await assert.rejects(
+                (gitService as any).withRetry(async () => {
+                    calls++;
+                    throw new Error('repository not found');
+                }, 3),
+                /repository not found/
+            );
+            assert.strictEqual(calls, 1);
+        });
+
+        test("throws after exhausting retries", async () => {
+            await assert.rejects(
+                (gitService as any).withRetry(async () => {
+                    throw new Error('Operation timed out');
+                }, 2),
+                /Operation timed out/
+            );
         });
     });
 

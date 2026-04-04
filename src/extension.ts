@@ -24,6 +24,7 @@ import { DetailsPanel } from './ui/panels/detailsPanel';
 
 // Services
 import { TelemetryService } from "./services/telemetry";
+import { GitService } from "./services/gitService";
 
 function extractItem(item: any): IMarketplaceItem | undefined {
   if (!item) {
@@ -48,6 +49,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(telemetry);
 
   telemetry.sendEvent("activate");
+
+  // Ensure git is available and safe.directory is configured globally to prevent
+  // ownership mismatch errors on Windows-managed directories.
+  GitService.ensureGitEnvironment();
 
   const globalStoragePath = context.globalStorageUri.fsPath;
 
@@ -155,8 +160,15 @@ export function activate(context: vscode.ExtensionContext) {
                   treeProvider.addItems(repo, fetched.agents, fetched.skills);
                 }
               } catch (error) {
+                const msg = (error as Error).message || '';
                 console.error(`Error searching ${repo}:`, error);
-                telemetry.sendError(error as Error, { context: "search", repo });
+                if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('does not exist')) {
+                  vscode.window.showErrorMessage(`Repository not found: "${repo}". Please check the URL in your settings.`);
+                } else if (msg.toLowerCase().includes('spawn git') && msg.toLowerCase().includes('enoent')) {
+                  vscode.window.showErrorMessage('Git is not found in your PATH. Please install Git and restart VS Code.');
+                } else {
+                  telemetry.sendError(error as Error, { context: "search", repo });
+                }
               }
             }
 
@@ -331,7 +343,7 @@ export function activate(context: vscode.ExtensionContext) {
                 const skillRootDirs = [
                   path.join(os.homedir(), '.copilot', 'skills'),
                 ];
-                if (vscode.workspace.workspaceFolders) {
+                if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
                   const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
                   const config = vscode.workspace.getConfiguration('chat');
                   const skillSetting = config.get<string[]>('agentSkillsLocations') || [];
@@ -344,13 +356,19 @@ export function activate(context: vscode.ExtensionContext) {
                 const isRootDir = skillRootDirs.some(r => path.resolve(parentDir) === path.resolve(r));
                 if (isRootDir) {
                   // Flat install - just delete the file
-                  await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
+                  await vscode.workspace.fs.delete(vscode.Uri.file(installed.path)).then(undefined, (e) => {
+                    if (e?.code !== 'FileNotFound' && !e?.message?.includes('ENOENT')) { throw e; }
+                  });
                 } else {
                   // Packaged install - delete the whole skill directory
-                  await vscode.workspace.fs.delete(vscode.Uri.file(parentDir), { recursive: true });
+                  await vscode.workspace.fs.delete(vscode.Uri.file(parentDir), { recursive: true }).then(undefined, (e) => {
+                    if (e?.code !== 'FileNotFound' && !e?.message?.includes('ENOENT')) { throw e; }
+                  });
                 }
               } else {
-                await vscode.workspace.fs.delete(vscode.Uri.file(installed.path));
+                await vscode.workspace.fs.delete(vscode.Uri.file(installed.path)).then(undefined, (e) => {
+                  if (e?.code !== 'FileNotFound' && !e?.message?.includes('ENOENT')) { throw e; }
+                });
               }
 
               vscode.window.showInformationMessage(`Uninstalled ${item.name}`);
