@@ -8,6 +8,12 @@ export class SkillParser {
         const fileName = path.basename(filePath).toLowerCase();
         const isDedicatedSkillFile = fileName === 'skill.md' || fileName.endsWith('.skill.md');
 
+        // Ignore GitHub repository metadata files
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        if (normalizedPath.includes('/.github/') || normalizedPath.startsWith('.github/')) {
+            return null;
+        }
+
         // If it has a type and it is NOT skill, it's not for us
         if (metadata.type && metadata.type.toLowerCase() !== 'skill') {
             return null;

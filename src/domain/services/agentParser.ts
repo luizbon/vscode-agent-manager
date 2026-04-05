@@ -7,6 +7,12 @@ export class AgentParser {
         const fileName = filePath.toLowerCase();
         const isDedicatedAgentFile = fileName.endsWith('.agent.md');
 
+        // Ignore GitHub repository metadata files (PR templates, workflow docs, etc.)
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        if (normalizedPath.includes('/.github/') || normalizedPath.startsWith('.github/')) {
+            return null;
+        }
+
         // If it has a type and it is NOT agent, it's not for us
         if (metadata.type && metadata.type.toLowerCase() !== 'agent') {
             return null;
