@@ -37,14 +37,8 @@
     "views": {
       "agentManager": [
         {
-          "type": "webview",
-          "id": "agentManagerMarketplace",
-          "name": "Agent Marketplace",
-          "icon": "$(hubot)"
-        },
-        {
           "id": "agentManagerAgents",
-          "name": "Agent Management",
+          "name": "Remote Registries",
           "icon": "$(list-unordered)"
         }
       ]
