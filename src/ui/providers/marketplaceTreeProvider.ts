@@ -125,37 +125,13 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<Registry
 
     getChildren(element?: RegistryItem): Thenable<RegistryItem[]> {
         if (!element) {
-            // Root
-            return Promise.resolve([
-                new CategoryItem('Installed Agents', 'installed_agents', vscode.TreeItemCollapsibleState.Expanded),
-                new CategoryItem('Installed Skills', 'installed_skills', vscode.TreeItemCollapsibleState.Expanded),
-                new CategoryItem('Sources', 'sources', vscode.TreeItemCollapsibleState.Expanded)
-            ]);
-        } else if (element instanceof CategoryItem) {
-            if (element.id === 'installed_agents') {
-                if (this.installedAgents.length === 0) {
-                    return Promise.resolve([new vscode.TreeItem('No installed agents', vscode.TreeItemCollapsibleState.None) as any as RegistryItem]);
-                }
-                return Promise.resolve(this.installedAgents.map(a => {
-                    const updateItem = this.checkUpdateAvailable(a);
-                    return new MarketplaceTreeItem(a, true, updateItem);
-                }));
-            } else if (element.id === 'installed_skills') {
-                if (this.installedSkills.length === 0) {
-                    return Promise.resolve([new vscode.TreeItem('No installed skills', vscode.TreeItemCollapsibleState.None) as any as RegistryItem]);
-                }
-                return Promise.resolve(this.installedSkills.map(s => {
-                    const updateItem = this.checkUpdateAvailable(s);
-                    return new MarketplaceTreeItem(s, true, updateItem);
-                }));
-            } else if (element.id === 'sources') {
-                const repos = Array.from(this.repoAgents.keys());
-                return Promise.resolve(repos.map(repo => {
-                    const data = this.repoAgents.get(repo);
-                    const count = data ? data.agents.length + data.skills.length : 0;
-                    return new RepositoryTreeItem(repo, count);
-                }));
-            }
+            // Root - directly list repositories as top-level nodes
+            const repos = Array.from(this.repoAgents.keys());
+            return Promise.resolve(repos.map(repo => {
+                const data = this.repoAgents.get(repo);
+                const count = data ? data.agents.length + data.skills.length : 0;
+                return new RepositoryTreeItem(repo, count);
+            }));
         } else if (element instanceof RepositoryTreeItem) {
             const data = this.repoAgents.get(element.repoUrl);
             const items: (Agent | Skill)[] = [];
@@ -170,21 +146,7 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<Registry
     }
 }
 
-export type RegistryItem = CategoryItem | RepositoryTreeItem | MarketplaceTreeItem;
-
-export class CategoryItem extends vscode.TreeItem {
-    constructor(
-        public readonly label: string,
-        public readonly id: string,
-        public readonly collapsibleState: vscode.TreeItemCollapsibleState
-    ) {
-        super(label, collapsibleState);
-        this.contextValue = 'category';
-        if (id === 'installed_agents') { this.iconPath = new vscode.ThemeIcon('hubot'); }
-        if (id === 'installed_skills') { this.iconPath = new vscode.ThemeIcon('symbol-misc'); }
-        if (id === 'sources') { this.iconPath = new vscode.ThemeIcon('rss'); }
-    }
-}
+export type RegistryItem = RepositoryTreeItem | MarketplaceTreeItem;
 
 export class RepositoryTreeItem extends vscode.TreeItem {
     constructor(
@@ -245,8 +207,8 @@ export class MarketplaceTreeItem extends vscode.TreeItem {
             };
         } else {
             this.command = {
-                command: 'marketplace.openDetails',
-                title: 'Open Details',
+                command: 'marketplace.install',
+                title: 'Install Item',
                 arguments: [item]
             };
         }
